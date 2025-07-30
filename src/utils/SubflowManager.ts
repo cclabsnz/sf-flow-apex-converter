@@ -17,6 +17,23 @@ interface FlowElements {
   [key: string]: number | undefined;
 }
 
+interface SubflowReference {
+  name: string;
+  version?: string;
+  inputAssignments?: Array<{
+    name: string;
+    value: string;
+    dataType: string;
+  }>;
+  outputAssignments?: Array<{
+    name: string;
+    value: string;
+    dataType: string;
+  }>;
+  isInLoop: boolean;
+  parentElement?: string;
+}
+
 interface SubflowDetails {
   name: string;
   elements: FlowElements;
@@ -24,6 +41,11 @@ interface SubflowDetails {
     number: string;
     status: string;
     lastModified: string;
+  };
+  references: SubflowReference[];
+  dataFlow: {
+    inputs: Map<string, string>;
+    outputs: Map<string, string>;
   };
 }
 
@@ -89,7 +111,8 @@ export class SubflowManager {
     // SOQL Analysis
     if (analysis.soqlQueries > 0) {
       lines.push(`${indent}SOQL Analysis:`);
-      lines.push(`${indent}  Total Queries: ${analysis.soqlQueries}`);
+      lines.push(`${indent}  Direct Queries: ${analysis.soqlQueries}`);
+      lines.push(`${indent}  Cumulative Queries: ${analysis.cumulativeSoqlQueries}`);
       lines.push(`${indent}  Sources:`);
       analysis.soqlSources.forEach(source => {
         lines.push(`${indent}    - ${source}`);
@@ -99,7 +122,9 @@ export class SubflowManager {
 
     // DML Operations
     if (analysis.dmlOperations > 0) {
-      lines.push(`${indent}DML Operations: ${analysis.dmlOperations}`);
+      lines.push(`${indent}DML Operations:`);
+      lines.push(`${indent}  Direct Operations: ${analysis.dmlOperations}`);
+      lines.push(`${indent}  Cumulative Operations: ${analysis.cumulativeDmlOperations}`);
       lines.push('');
     }
 
@@ -110,15 +135,44 @@ export class SubflowManager {
         lines.push(`${indent}  ${subflow.name}:`);
         lines.push(`${indent}    Version: ${subflow.version.number}`);
         lines.push(`${indent}    Elements: ${subflow.elements.total}`);
+        if (subflow.references.some(ref => ref.isInLoop)) {
+          lines.push(`${indent}    Called in Loop: Yes`);
+        }
+        if (subflow.references.length > 0) {
+          const ref = subflow.references[0];
+          if (ref.inputAssignments?.length) {
+            lines.push(`${indent}    Input Parameters: ${ref.inputAssignments.length}`);
+          }
+          if (ref.outputAssignments?.length) {
+            lines.push(`${indent}    Output Parameters: ${ref.outputAssignments.length}`);
+          }
+        }
       });
       lines.push('');
     }
+
+    // Complexity Analysis
+    lines.push(`${indent}Complexity Analysis:`);
+    lines.push(`${indent}  Direct Complexity: ${analysis.complexity}`);
+    lines.push(`${indent}  Cumulative Complexity: ${analysis.cumulativeComplexity}`);
+    lines.push('');
 
     // Bulkification
     lines.push(`${indent}Bulkification:`);
     lines.push(`${indent}  Required: ${analysis.shouldBulkify}`);
     lines.push(`${indent}  Reason: ${analysis.bulkificationReason}`);
-    lines.push(`${indent}  Complexity Score: ${analysis.complexity}`);
+    lines.push('');
+
+    // Apex Recommendation
+    lines.push(`${indent}Apex Conversion Recommendation:`);
+    lines.push(`${indent}  Should Split: ${analysis.apexRecommendation.shouldSplit}`);
+    lines.push(`${indent}  Reason: ${analysis.apexRecommendation.reason}`);
+    if (analysis.apexRecommendation.suggestedClasses.length > 0) {
+      lines.push(`${indent}  Suggested Classes:`);
+      analysis.apexRecommendation.suggestedClasses.forEach(className => {
+        lines.push(`${indent}    - ${className}`);
+      });
+    }
 
     return lines.join('\n');
   }
@@ -131,14 +185,22 @@ export class SubflowManager {
         shouldBulkify: true,
         bulkificationReason: 'Maximum recursion depth reached',
         complexity: 1,
+        cumulativeComplexity: 1,
         dmlOperations: 0,
+        cumulativeDmlOperations: 0,
         soqlQueries: 0,
+        cumulativeSoqlQueries: 0,
         parameters: new Map(),
         version: { number: '0', status: 'Unknown', lastModified: new Date().toISOString() },
         soqlSources: [],
         elements: { total: 0 },
         subflows: [],
-        totalElementsWithSubflows: 0
+        totalElementsWithSubflows: 0,
+        apexRecommendation: {
+          shouldSplit: false,
+          reason: 'Max recursion depth reached',
+          suggestedClasses: ['MainFlowProcessor']
+        }
       };
     }
     console.log(`\nAnalyzing flow: ${subflowName}...`);
@@ -153,7 +215,7 @@ export class SubflowManager {
     try {
       Logger.debug('SubflowManager', `Fetching metadata for subflow: ${subflowName}`);
       const metadata = await this.getSubflowMetadata(subflowName);
-      const analysis = await this.analyzeSubflowMetadata(metadata);
+      const analysis = await this.analyzeSubflowMetadata(metadata, depth);
       
       this.subflowCache.set(subflowName, analysis);
       
@@ -169,15 +231,25 @@ export class SubflowManager {
     }
   }
 
-  private async getSubflowMetadata(subflowName: string): Promise<any> {
-    const query = `SELECT Id, Metadata, VersionNumber, Status, LastModifiedDate FROM Flow WHERE DeveloperName = '${subflowName}' AND Status = 'Active'`;
+  private async getSubflowMetadata(subflowName: string, requireActive: boolean = true): Promise<any> {
+    // Query both active and latest versions
+    const query = `
+      SELECT Id, Metadata, VersionNumber, Status, LastModifiedDate 
+      FROM Flow 
+      WHERE DeveloperName = '${subflowName}'
+      ${requireActive ? "AND Status = 'Active'" : ""}
+      ORDER BY VersionNumber DESC
+    `;
     
     Logger.debug('SubflowManager', `Fetching metadata for flow: ${subflowName}`, { query });
     const result = await this.connection.tooling.query(query);
     
     if (result.records.length === 0) {
-      Logger.warn('SubflowManager', `Flow ${subflowName} not found or not active`);
-      throw new Error(`Subflow ${subflowName} not found or not active`);
+      const errorMsg = requireActive 
+        ? `Flow ${subflowName} not found or not active`
+        : `Flow ${subflowName} not found`;
+      Logger.warn('SubflowManager', errorMsg);
+      throw new Error(errorMsg);
     }
 
     const flow = result.records[0];
@@ -187,13 +259,31 @@ export class SubflowManager {
       lastModified: flow.LastModifiedDate
     });
 
-    const metadata = await parseStringPromise(flow.Metadata);
+    // Parse XML with options to handle arrays consistently
+    const metadata = await parseStringPromise(flow.Metadata, {
+      explicitArray: true,
+      normalizeTags: true,
+      valueProcessors: [
+        (value: string) => {
+          // Convert 'true'/'false' strings to booleans
+          if (value.toLowerCase() === 'true') return true;
+          if (value.toLowerCase() === 'false') return false;
+          return value;
+        }
+      ]
+    });
+
+    // Normalize metadata structure
+    const normalizedMetadata = metadata.Flow || metadata;
+    
+    // Add version info
     return {
-      ...metadata.Flow || metadata,
+      ...normalizedMetadata,
       _flowVersion: {
         version: flow.VersionNumber,
         status: flow.Status,
-        lastModified: flow.LastModifiedDate
+        lastModified: flow.LastModifiedDate,
+        id: flow.Id
       }
     };
   }
@@ -266,7 +356,7 @@ export class SubflowManager {
     return elements;
   }
 
-  private async analyzeSubflowMetadata(metadata: any): Promise<SubflowAnalysis> {
+  private async analyzeSubflowMetadata(metadata: any, depth: number = 0): Promise<SubflowAnalysis> {
     let dmlOperations = 0;
     let soqlQueries = 0;
     let complexity = 0;
@@ -526,6 +616,130 @@ export class SubflowManager {
     return Array.isArray(elements) ? elements.length : 1;
   }
 
+  private extractSubflowReferences(metadata: any): SubflowReference[] {
+    const references: SubflowReference[] = [];
+    const loopElements = new Set<string>();
+
+    // First, identify all loop elements
+    if (metadata.loops) {
+      const loops = Array.isArray(metadata.loops) ? metadata.loops : [metadata.loops];
+      loops.forEach(loop => {
+        if (loop.name) loopElements.add(loop.name[0]);
+      });
+    }
+
+    // Helper to check if an element is in a loop
+    const isInLoop = (element: any): boolean => {
+      if (!element.processMetadataValues) return false;
+      
+      const processValues = Array.isArray(element.processMetadataValues) 
+        ? element.processMetadataValues 
+        : [element.processMetadataValues];
+
+      for (const value of processValues) {
+        if (value.name?.[0] === 'BuilderContext' && value.value?.[0]) {
+          const context = JSON.parse(value.value[0]);
+          return loopElements.has(context.containerId);
+        }
+      }
+      return false;
+    };
+
+    // Process direct subflow references
+    if (metadata.subflows) {
+      const subflows = Array.isArray(metadata.subflows) ? metadata.subflows : [metadata.subflows];
+      subflows.forEach(subflow => {
+        const reference: SubflowReference = {
+          name: subflow.flowName?.[0] || '',
+          isInLoop: isInLoop(subflow),
+          parentElement: subflow.name?.[0]
+        };
+
+        // Extract input assignments
+        if (subflow.inputAssignments) {
+          const inputs = Array.isArray(subflow.inputAssignments) 
+            ? subflow.inputAssignments 
+            : [subflow.inputAssignments];
+          
+          reference.inputAssignments = inputs.map(input => ({
+            name: input.name?.[0] || '',
+            value: input.value?.[0] || '',
+            dataType: input.dataType?.[0] || 'String'
+          }));
+        }
+
+        // Extract output assignments
+        if (subflow.outputAssignments) {
+          const outputs = Array.isArray(subflow.outputAssignments) 
+            ? subflow.outputAssignments 
+            : [subflow.outputAssignments];
+          
+          reference.outputAssignments = outputs.map(output => ({
+            name: output.name?.[0] || '',
+            value: output.value?.[0] || '',
+            dataType: output.dataType?.[0] || 'String'
+          }));
+        }
+
+        references.push(reference);
+      });
+    }
+
+    // Process subflows in loops
+    if (metadata.loops) {
+      const loops = Array.isArray(metadata.loops) ? metadata.loops : [metadata.loops];
+      loops.forEach(loop => {
+        if (loop.elements) {
+          const elements = Array.isArray(loop.elements) ? loop.elements : [loop.elements];
+          elements.forEach(element => {
+            if (element.subflow || element.type?.[0] === 'Subflow' || 
+                element.type === 'Subflow' || 
+                (element.type && Array.isArray(element.type) && element.type.includes('Subflow'))) {
+              
+              const reference: SubflowReference = {
+                name: element.subflow?.[0]?.flowName?.[0] || 
+                      element.flowName?.[0] || 
+                      element.subflow?.flowName?.[0] || 
+                      (element.subflow && typeof element.subflow === 'string' ? element.subflow : ''),
+                isInLoop: true,
+                parentElement: loop.name?.[0]
+              };
+
+              // Extract assignments same as above
+              if (element.inputAssignments) {
+                const inputs = Array.isArray(element.inputAssignments) 
+                  ? element.inputAssignments 
+                  : [element.inputAssignments];
+                
+                reference.inputAssignments = inputs.map(input => ({
+                  name: input.name?.[0] || '',
+                  value: input.value?.[0] || '',
+                  dataType: input.dataType?.[0] || 'String'
+                }));
+              }
+
+              if (element.outputAssignments) {
+                const outputs = Array.isArray(element.outputAssignments) 
+                  ? element.outputAssignments 
+                  : [element.outputAssignments];
+                
+                reference.outputAssignments = outputs.map(output => ({
+                  name: output.name?.[0] || '',
+                  value: output.value?.[0] || '',
+                  dataType: output.dataType?.[0] || 'String'
+                }));
+              }
+
+              references.push(reference);
+            }
+          });
+        }
+      });
+    }
+
+    return references;
+  }
+
   private calculateComplexity(metadata: any, isSubflow: boolean = false): number {
     let complexity = 1;
 
@@ -568,6 +782,187 @@ export class SubflowManager {
     }
 
     return complexity;
+  }
+
+  private async analyzeSubflowMetadata(metadata: any, depth: number = 0): Promise<SubflowAnalysis> {
+    let dmlOperations = 0;
+    let soqlQueries = 0;
+    let complexity = 0;
+    let cumulativeComplexity = 0;
+    let cumulativeDmlOperations = 0;
+    let cumulativeSoqlQueries = 0;
+    let soqlInLoop = false;
+    const parameters = new Map<string, any>();
+    const soqlSources = new Set<string>();
+    const flowVersion = metadata._flowVersion;
+    const subflowDetails: SubflowDetails[] = [];
+    let totalElementsWithSubflows = 0;
+    const processedSubflows = new Set<string>();
+
+    Logger.info('SubflowManager', `Analyzing flow version ${flowVersion.version}`, {
+      status: flowVersion.status,
+      lastModified: flowVersion.lastModified
+    });
+
+    // Count operations
+    if (metadata.recordCreates) dmlOperations += this.countElements(metadata.recordCreates);
+    if (metadata.recordUpdates) dmlOperations += this.countElements(metadata.recordUpdates);
+    if (metadata.recordDeletes) dmlOperations += this.countElements(metadata.recordDeletes);
+
+    // Record Lookups (Get Records)
+    if (metadata.recordLookups) {
+      const lookups = Array.isArray(metadata.recordLookups) ? metadata.recordLookups : [metadata.recordLookups];
+      soqlQueries += lookups.length;
+      soqlSources.add('Record Lookups');
+    }
+
+    // Extract all subflow references with their input/output assignments
+    const subflowReferences = this.extractSubflowReferences(metadata);
+    
+    // Process each subflow reference
+    for (const reference of subflowReferences) {
+      if (!reference.name || processedSubflows.has(reference.name)) continue;
+      
+      try {
+        const subflowAnalysis = await this.analyzeSubflow(reference.name, depth + 1);
+        processedSubflows.add(reference.name);
+
+        // Create detailed subflow entry
+        const subflowEntry: SubflowDetails = {
+          name: reference.name,
+          elements: subflowAnalysis.elements,
+          version: subflowAnalysis.version,
+          references: [reference],
+          dataFlow: {
+            inputs: new Map(reference.inputAssignments?.map(input => [input.name, input.value]) || []),
+            outputs: new Map(reference.outputAssignments?.map(output => [output.name, output.value]) || [])
+          }
+        };
+
+        subflowDetails.push(subflowEntry);
+        totalElementsWithSubflows += subflowAnalysis.elements.total;
+
+        // Update cumulative metrics
+        cumulativeComplexity += subflowAnalysis.complexity;
+        cumulativeDmlOperations += subflowAnalysis.dmlOperations;
+        cumulativeSoqlQueries += subflowAnalysis.soqlQueries;
+
+        if (subflowAnalysis.soqlQueries > 0) {
+          soqlQueries += subflowAnalysis.soqlQueries;
+          soqlSources.add(`Subflow${reference.isInLoop ? ' in Loop' : ''}: ${reference.name} (contains ${subflowAnalysis.soqlQueries} SOQL queries)`);
+          if (reference.isInLoop) soqlInLoop = true;
+        }
+      } catch (error) {
+        Logger.warn('SubflowManager', `Failed to analyze subflow ${reference.name}`, error);
+      }
+    }
+
+    // Dynamic Choice Sets
+    if (metadata.dynamicChoiceSets) {
+      const choiceSets = Array.isArray(metadata.dynamicChoiceSets) ? metadata.dynamicChoiceSets : [metadata.dynamicChoiceSets];
+      soqlQueries += choiceSets.length;
+      soqlSources.add('Dynamic Choice Sets');
+    }
+
+    // Record-Triggered Flow
+    if (metadata.trigger && metadata.trigger[0]?.type?.[0] === 'RecordAfterSave') {
+      soqlQueries++; // Count implicit query for the triggering record
+      soqlSources.add('Record-Triggered Flow');
+    }
+
+    // Formula Elements with Cross-Object References
+    if (metadata.formulas) {
+      const formulas = Array.isArray(metadata.formulas) ? metadata.formulas : [metadata.formulas];
+      for (const formula of formulas) {
+        if (formula.expression?.[0]?.includes('.')) {
+          soqlQueries++; // Count cross-object reference queries
+          soqlSources.add('Cross-Object Formula References');
+        }
+      }
+    }
+
+    // Calculate complexity
+    complexity = this.calculateComplexity(metadata);
+
+    // Extract parameters
+    if (metadata.variables) {
+      const variables = Array.isArray(metadata.variables) ? metadata.variables : [metadata.variables];
+      variables.forEach((variable: any) => {
+        if (variable.isInput?.[0] === 'true' || variable.isOutput?.[0] === 'true') {
+          parameters.set(variable.name[0], {
+            dataType: variable.dataType?.[0],
+            isInput: variable.isInput?.[0] === 'true',
+            isOutput: variable.isOutput?.[0] === 'true',
+            isCollection: variable.isCollection?.[0] === 'true'
+          });
+        }
+      });
+    }
+
+    const shouldBulkify = this.shouldBulkifySubflow(dmlOperations, soqlQueries, complexity, metadata, soqlInLoop);
+
+    // Calculate apex class split recommendation
+    const apexRecommendation = this.getApexRecommendation(
+      cumulativeComplexity,
+      cumulativeDmlOperations,
+      cumulativeSoqlQueries,
+      subflowDetails,
+      processedSubflows
+    );
+
+    const elements = this.countFlowElements(metadata);
+    
+    const analysis: SubflowAnalysis = {
+      flowName: metadata.name?.[0] || 'Unknown',
+      shouldBulkify,
+      bulkificationReason: this.getBulkificationReason(dmlOperations, soqlQueries, complexity, metadata, soqlInLoop),
+      complexity,
+      cumulativeComplexity,
+      dmlOperations,
+      cumulativeDmlOperations,
+      soqlQueries,
+      cumulativeSoqlQueries,
+      parameters,
+      version: {
+        number: flowVersion.version,
+        status: flowVersion.status,
+        lastModified: flowVersion.lastModified
+      },
+      soqlSources: Array.from(soqlSources),
+      elements,
+      subflows: subflowDetails,
+      totalElementsWithSubflows,
+      apexRecommendation
+    };
+
+    Logger.info('SubflowManager', `Analysis complete for flow: ${analysis.flowName}`, {
+      version: analysis.version,
+      elements: {
+        direct: elements.total,
+        withSubflows: totalElementsWithSubflows,
+        breakdown: elements
+      },
+      subflows: subflowDetails.map(sf => ({
+        name: sf.name,
+        elements: sf.elements.total,
+        version: sf.version.number,
+        dataFlow: {
+          inputs: Array.from(sf.dataFlow.inputs.keys()),
+          outputs: Array.from(sf.dataFlow.outputs.keys())
+        }
+      })),
+      soqlQueries: analysis.soqlQueries,
+      cumulativeSoqlQueries: analysis.cumulativeSoqlQueries,
+      soqlSources: analysis.soqlSources,
+      dmlOperations: analysis.dmlOperations,
+      cumulativeDmlOperations: analysis.cumulativeDmlOperations,
+      complexity: analysis.complexity,
+      cumulativeComplexity: analysis.cumulativeComplexity,
+      shouldBulkify: analysis.shouldBulkify,
+      apexRecommendation: analysis.apexRecommendation
+    });
+
+    return analysis;
   }
 
   private shouldBulkifySubflow(
