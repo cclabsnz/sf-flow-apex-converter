@@ -1,0 +1,66 @@
+{
+  "name": "@cclabsnz/sf-flow-apex-converter",
+  "version": "1.0.6",
+  "description": "CLI tool to convert Salesforce Flows into bulkified Apex classes",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "test": "jest",
+    "lint": "eslint src/**/*.ts",
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "bin": {
+    "sf-flow-apex-converter": "./dist/index.js"
+  },
+  "keywords": [
+    "salesforce",
+    "flow",
+    "apex",
+    "bulkification",
+    "cli",
+    "sfdx",
+    "sf-plugin"
+  ],
+  "author": "CCLabsNZ",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cclabsnz/sf-flow-apex-converter.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cclabsnz/sf-flow-apex-converter/issues"
+  },
+  "homepage": "https://github.com/cclabsnz/sf-flow-apex-converter#readme",
+  "dependencies": {
+    "@salesforce/core": "^5.3.10",
+    "@salesforce/sf-plugins-core": "^3.1.3",
+    "handlebars": "^4.7.8",
+    "jsforce": "^3.5.0",
+    "xml2js": "^0.6.2"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.11",
+    "@types/node": "^20.10.5",
+    "@types/xml2js": "^0.4.14",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "eslint": "^8.56.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=14.20.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
