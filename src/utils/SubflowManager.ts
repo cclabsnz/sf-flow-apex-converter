@@ -1,6 +1,7 @@
 import { Connection } from 'jsforce';
 import { parseStringPromise } from 'xml2js';
 import { SchemaManager } from './SchemaManager.js';
+import { Logger } from './Logger.js';
 
 export interface SubflowAnalysis {
   flowName: string;
@@ -21,19 +22,29 @@ export class SubflowManager {
   ) {}
 
   async analyzeSubflow(subflowName: string): Promise<SubflowAnalysis> {
+    Logger.info('SubflowManager', `Starting analysis of subflow: ${subflowName}`);
     if (this.subflowCache.has(subflowName)) {
+      Logger.debug('SubflowManager', `Using cached analysis for subflow: ${subflowName}`);
       return this.subflowCache.get(subflowName)!;
     }
 
     try {
+      Logger.debug('SubflowManager', `Fetching metadata for subflow: ${subflowName}`);
       const metadata = await this.getSubflowMetadata(subflowName);
       const analysis = await this.analyzeSubflowMetadata(metadata);
       
       this.subflowCache.set(subflowName, analysis);
+      Logger.info('SubflowManager', `Analysis complete for subflow: ${subflowName}`, {
+        dmlOperations: analysis.dmlOperations,
+        soqlQueries: analysis.soqlQueries,
+        complexity: analysis.complexity,
+        shouldBulkify: analysis.shouldBulkify
+      });
       return analysis;
       
     } catch (error) {
       const err = error as Error;
+      Logger.error('SubflowManager', `Failed to analyze subflow ${subflowName}`, err);
       throw new Error(`Failed to analyze subflow ${subflowName}: ${err.message}`);
     }
   }

@@ -9,6 +9,7 @@ import { FlowAnalyzer } from './utils/FlowAnalyzer.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseStringPromise } from 'xml2js';
+import { Logger, LogLevel } from './utils/Logger.js';
 
 async function main() {
   const args = process.argv.slice(2);
@@ -23,6 +24,8 @@ Usage:
 Options:
   -v, --version     Show version number
   -h, --help        Show help information
+  --log-level      Set log level (debug, info, warn, error)
+  --quiet          Disable logging
 
 Arguments:
   flowName          The Flow API Name (not the label) from your Salesforce org
@@ -64,7 +67,24 @@ Note: When specifying a flow from your org, use the Flow API Name (DeveloperName
   let flowContent: string;
   let flowMetadata: any;
   
+  // Handle logging options
+  const logLevelArg = args.find((arg, i) => arg === '--log-level' && i + 1 < args.length);
+  if (logLevelArg) {
+    const levelIndex = args.indexOf(logLevelArg);
+    const level = args[levelIndex + 1].toUpperCase();
+    if (level in LogLevel) {
+      Logger.setLogLevel(level as LogLevel);
+      args.splice(levelIndex, 2); // Remove log level args
+    }
+  }
+
+  if (args.includes('--quiet')) {
+    Logger.enableLogs(false);
+    args = args.filter(arg => arg !== '--quiet');
+  }
+
   try {
+    Logger.info('CLI', 'Starting flow analysis');
     // Check if input is a file path
     if (input.endsWith('.flow-meta.xml')) {
       const filePath = path.resolve(input);

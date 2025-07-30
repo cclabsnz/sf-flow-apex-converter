@@ -2,6 +2,7 @@ import { Connection } from 'jsforce';
 import { parseStringPromise } from 'xml2js';
 import { SchemaManager } from './SchemaManager.js';
 import { SubflowManager } from './SubflowManager.js';
+import { Logger } from './Logger.js';
 
 export enum FlowElementType {
   RECORD_CREATE = 'recordCreates',
@@ -59,7 +60,14 @@ export class FlowAnalyzer {
   ) {}
 
   async analyzeFlowComprehensive(flowMetadata: any): Promise<ComprehensiveFlowAnalysis> {
+    Logger.info('FlowAnalyzer', 'Starting flow analysis');
+    Logger.debug('FlowAnalyzer', 'Flow metadata received', flowMetadata);
+
     const metadata = flowMetadata.Metadata || flowMetadata.metadata;
+    if (!metadata) {
+      Logger.error('FlowAnalyzer', 'Invalid metadata structure', flowMetadata);
+      throw new Error('Invalid flow metadata structure');
+    }
     
     const analysis: ComprehensiveFlowAnalysis = {
       flowName: flowMetadata.definition.DeveloperName,
@@ -73,14 +81,33 @@ export class FlowAnalyzer {
       recommendations: []
     };
 
-    await this.parseAllElements(metadata, analysis);
-    this.calculateMetrics(analysis);
-    this.generateRecommendations(analysis);
+    try {
+      Logger.info('FlowAnalyzer', 'Parsing flow elements');
+      await this.parseAllElements(metadata, analysis);
+
+      Logger.info('FlowAnalyzer', 'Calculating metrics');
+      this.calculateMetrics(analysis);
+
+      Logger.info('FlowAnalyzer', 'Generating recommendations');
+      this.generateRecommendations(analysis);
+
+      Logger.info('FlowAnalyzer', 'Analysis complete', {
+        flowName: analysis.flowName,
+        totalElements: analysis.totalElements,
+        dmlOperations: analysis.dmlOperations,
+        soqlQueries: analysis.soqlQueries,
+        bulkificationScore: analysis.bulkificationScore
+      });
+    } catch (error) {
+      Logger.error('FlowAnalyzer', 'Error during flow analysis', error);
+      throw error;
+    }
     
     return analysis;
   }
 
   private async parseAllElements(metadata: any, analysis: ComprehensiveFlowAnalysis): Promise<void> {
+    Logger.debug('FlowAnalyzer', 'Starting element parsing');
     for (const elementType of Object.values(FlowElementType)) {
       if (metadata[elementType]) {
         const elements = Array.isArray(metadata[elementType]) 

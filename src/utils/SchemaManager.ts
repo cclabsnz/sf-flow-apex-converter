@@ -1,4 +1,5 @@
 import { Connection } from 'jsforce';
+import { Logger } from './Logger.js';
 
 export interface FieldDefinition {
   name: string;
@@ -22,11 +23,14 @@ export class SchemaManager {
   constructor(private connection: Connection) {}
 
   async getObjectSchema(objectName: string): Promise<ObjectSchema> {
+    Logger.info('SchemaManager', `Fetching schema for object: ${objectName}`);
     if (this.schemaCache.has(objectName)) {
+      Logger.debug('SchemaManager', `Using cached schema for object: ${objectName}`);
       return this.schemaCache.get(objectName)!;
     }
 
     try {
+      Logger.debug('SchemaManager', `Making API call to describe object: ${objectName}`);
       const describe = await this.connection.describe(objectName);
       
       const schema: ObjectSchema = {
@@ -56,10 +60,15 @@ export class SchemaManager {
       });
 
       this.schemaCache.set(objectName, schema);
+      Logger.debug('SchemaManager', `Schema fetched and cached for object: ${objectName}`, {
+        fields: schema.fields.size,
+        recordTypes: schema.recordTypes.size
+      });
       return schema;
 
     } catch (error) {
       const err = error as Error;
+      Logger.error('SchemaManager', `Failed to fetch schema for ${objectName}`, err);
       throw new Error(`Failed to fetch schema for ${objectName}: ${err.message}`);
     }
   }
