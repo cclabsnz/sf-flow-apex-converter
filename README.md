@@ -10,6 +10,19 @@ npm install -g @cclabsnz/sf-flow-apex-converter
 
 ## Usage
 
+### Flow API Name vs Flow Label
+
+When analyzing flows from a Salesforce org, you must use the Flow API Name (also known as DeveloperName), not the Flow Label. Here's how to find it:
+
+1. In Salesforce Setup:
+   - Go to Setup > Process Automation > Flows
+   - Look for the "API Name" column
+
+2. In Flow Builder URL:
+   - When editing a flow, look at the URL
+   - It will be like: /builder/flowBuilder.app?flowId=301XXXXX
+   - The API Name is listed in the flow properties
+
 ### Prerequisites
 
 To analyze flows from a Salesforce org:
@@ -45,7 +58,8 @@ sf-flow-apex-converter --version
 
 # Method 1: Analyze flow from Salesforce org
 # First authenticate with your org using: sf login web
-sf-flow-apex-converter MyFlowName
+# Use the Flow API Name (DeveloperName), not the Flow Label
+sf-flow-apex-converter MyFlow_API_Name  # API Name from Setup > Flows
 
 # Method 2: Analyze local flow file using absolute path
 sf-flow-apex-converter /path/to/MyFlow.flow-meta.xml

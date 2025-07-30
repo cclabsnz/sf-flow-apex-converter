@@ -24,10 +24,24 @@ Options:
   -v, --version     Show version number
   -h, --help        Show help information
 
+Arguments:
+  flowName          The Flow API Name (not the label) from your Salesforce org
+                    This is the DeveloperName field in Salesforce, found in the
+                    URL when editing the flow or in Setup > Flows list view.
+
 Examples:
-  sf-flow-apex-converter MyFlow
+  # Using Flow API Name from Salesforce org:
+  sf-flow-apex-converter MyFlow_API_Name
+
+  # Using local flow file with absolute path:
   sf-flow-apex-converter /path/to/MyFlow.flow-meta.xml
+
+  # Using local flow file with relative path:
   sf-flow-apex-converter ./force-app/main/default/flows/MyFlow.flow-meta.xml
+
+Note: When specifying a flow from your org, use the Flow API Name (DeveloperName),
+      not the Flow Label. The API Name can be found in Setup > Flows or in the
+      URL when editing the flow (/builder/flowBuilder.app?flowId=301XXXXX).
 `;
 
   if (args[0] === '--help' || args[0] === '-h') {
