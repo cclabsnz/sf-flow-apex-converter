@@ -4,7 +4,7 @@
   "description": "CLI tool to convert Salesforce Flows into bulkified Apex classes",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && chmod +x dist/index.js",
     "watch": "tsc -w",
     "test": "jest",
     "lint": "eslint src/**/*.ts",
@@ -16,9 +16,7 @@
     "README.md",
     "LICENSE"
   ],
-  "bin": {
-    "sf-flow-apex-converter": "./dist/index.js"
-  },
+  "bin": "./dist/index.js",
   "keywords": [
     "salesforce",
     "flow",

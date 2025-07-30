@@ -133,7 +133,7 @@ Note: When specifying a flow from your org, use the Flow API Name (DeveloperName
           console.log(JSON.stringify(analysis, null, 2));
           process.exit(0);
         } catch (error) {
-          Logger.error('CLI', `Failed to analyze flow from org: ${error.message}`);
+          Logger.error('CLI', `Failed to analyze flow from org: ${(error as Error).message}`);
           throw error;
         }
       } else {

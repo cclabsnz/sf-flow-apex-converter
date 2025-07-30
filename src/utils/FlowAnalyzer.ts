@@ -127,7 +127,7 @@ export class FlowAnalyzer {
       return flowMetadata;
       
     } catch (error) {
-      Logger.error('FlowAnalyzer', `Failed to fetch flow from org: ${error.message}`, error);
+      Logger.error('FlowAnalyzer', `Failed to fetch flow from org: ${(error as Error).message}`, error);
       throw error;
     }
   }
