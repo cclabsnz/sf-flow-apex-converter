@@ -43,3 +43,6 @@ coverage/
 *.tmp
 *.temp
 .cache/
+
+# Claude configuration
+.claude-limits
