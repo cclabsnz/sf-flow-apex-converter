@@ -1,7 +1,7 @@
 import { Connection } from 'jsforce';
 import { parseStringPromise } from 'xml2js';
 import { Logger } from './Logger.js';
-import { FlowMetadata, FlowVersion, SubflowReference } from './interfaces/SubflowTypes.js';
+import { FlowMetadata, FlowElementMetadata, SubflowReference } from './interfaces/SubflowTypes.js';
 
 export class SubflowParser {
   constructor(private connection: Connection) {}
@@ -68,13 +68,13 @@ export class SubflowParser {
     // First, identify all loop elements
     if (metadata.loops) {
       const loops = Array.isArray(metadata.loops) ? metadata.loops : [metadata.loops];
-      loops.forEach((loop: { name?: string[]; elements?: any[] }) => {
+      loops.forEach((loop: FlowElementMetadata) => {
         if (loop.name) loopElements.add(loop.name[0]);
       });
     }
 
     // Helper to check if an element is in a loop
-    const isInLoop = (element: any): boolean => {
+    const isInLoop = (element: FlowElementMetadata): boolean => {
       if (!element.processMetadataValues) return false;
       
       const processValues = Array.isArray(element.processMetadataValues) 
@@ -97,7 +97,7 @@ export class SubflowParser {
     // Process direct subflow references
     if (metadata.subflows) {
       const subflows = Array.isArray(metadata.subflows) ? metadata.subflows : [metadata.subflows];
-      subflows.forEach(subflow => {
+      subflows.forEach((subflow: FlowElementMetadata) => {
         const reference: SubflowReference = {
           name: subflow.flowName?.[0] || '',
           isInLoop: isInLoop(subflow),
@@ -110,7 +110,7 @@ export class SubflowParser {
             ? subflow.inputAssignments 
             : [subflow.inputAssignments];
           
-          reference.inputAssignments = inputs.map(input => ({
+          reference.inputAssignments = inputs.map((input: FlowElementMetadata) => ({
             name: input.name?.[0] || '',
             value: input.value?.[0] || '',
             dataType: input.dataType?.[0] || 'String'
@@ -123,7 +123,7 @@ export class SubflowParser {
             ? subflow.outputAssignments 
             : [subflow.outputAssignments];
           
-          reference.outputAssignments = outputs.map(output => ({
+          reference.outputAssignments = outputs.map((output: FlowElementMetadata) => ({
             name: output.name?.[0] || '',
             value: output.value?.[0] || '',
             dataType: output.dataType?.[0] || 'String'
@@ -137,12 +137,12 @@ export class SubflowParser {
     // Process subflows in loops
     if (metadata.loops) {
       const loops = Array.isArray(metadata.loops) ? metadata.loops : [metadata.loops];
-      loops.forEach(loop => {
+      loops.forEach((loop: FlowElementMetadata) => {
         if (loop.elements) {
           const elements = Array.isArray(loop.elements) ? loop.elements : [loop.elements];
-          elements.forEach(element => {
+          elements.forEach((element: FlowElementMetadata) => {
             if (element.subflow || element.type?.[0] === 'Subflow' || 
-                element.type === 'Subflow' || 
+                (element.type && !Array.isArray(element.type) && element.type === 'Subflow') || 
                 (element.type && Array.isArray(element.type) && element.type.includes('Subflow'))) {
               
               const reference: SubflowReference = {
@@ -159,7 +159,7 @@ export class SubflowParser {
                   ? element.inputAssignments 
                   : [element.inputAssignments];
                 
-                reference.inputAssignments = inputs.map(input => ({
+                reference.inputAssignments = inputs.map((input: FlowElementMetadata) => ({
                   name: input.name?.[0] || '',
                   value: input.value?.[0] || '',
                   dataType: input.dataType?.[0] || 'String'
@@ -171,7 +171,7 @@ export class SubflowParser {
                   ? element.outputAssignments 
                   : [element.outputAssignments];
                 
-                reference.outputAssignments = outputs.map(output => ({
+                reference.outputAssignments = outputs.map((output: FlowElementMetadata) => ({
                   name: output.name?.[0] || '',
                   value: output.value?.[0] || '',
                   dataType: output.dataType?.[0] || 'String'

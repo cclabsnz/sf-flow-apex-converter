@@ -2,7 +2,7 @@ import { Connection } from 'jsforce';
 import { Logger } from './Logger.js';
 import { SchemaManager } from './SchemaManager.js';
 import { SubflowParser } from './SubflowParser.js';
-import { SubflowAnalyzer } from './SubflowAnalyzer.js';
+import { SubflowAnalyzer } from './analyzers/SubflowAnalyzer.js';
 import { SubflowAnalysis, SubflowDetails } from './interfaces/SubflowTypes.js';
 
 export class SubflowManager {
@@ -24,7 +24,7 @@ export class SubflowManager {
     
     // Flow header
     lines.push(`${indent}Flow: ${analysis.flowName}`);
-    lines.push(`${indent}Version: ${analysis.version.number} (${analysis.version.status})`);
+    lines.push(`${indent}Version: ${analysis.version.version} (${analysis.version.status})`);
     lines.push(`${indent}Last Modified: ${analysis.version.lastModified}`);
     lines.push('');
 
@@ -66,7 +66,7 @@ export class SubflowManager {
       lines.push(`${indent}Subflows (${analysis.subflows.length}):`);
       analysis.subflows.forEach(subflow => {
         lines.push(`${indent}  ${subflow.name}:`);
-        lines.push(`${indent}    Version: ${subflow.version.number}`);
+        lines.push(`${indent}    Version: ${subflow.version.version}`);
         lines.push(`${indent}    Elements: ${subflow.elements.total}`);
         if (subflow.references.some(ref => ref.isInLoop)) {
           lines.push(`${indent}    Called in Loop: Yes`);
@@ -124,7 +124,7 @@ export class SubflowManager {
         soqlQueries: 0,
         cumulativeSoqlQueries: 0,
         parameters: new Map(),
-        version: { number: '0', status: 'Unknown', lastModified: new Date().toISOString() },
+        version: { version: '0', status: 'Unknown', lastModified: new Date().toISOString() },
         soqlSources: [],
         elements: { total: 0 },
         subflows: [],
