@@ -110,9 +110,9 @@ export class OrgValidator {
         const describe = await this.connection.describe(objectName);
         const schema: ObjectSchema = {
           fields: new Map(),
-          isCustom: describe.custom,
-          hasRecordTypes: describe.recordTypeInfos.length > 0,
-          sharingModel: describe.sharingModel
+          isCustom: Boolean(describe.custom),
+          hasRecordTypes: describe.recordTypeInfos?.length > 0 || false,
+          sharingModel: describe.custom ? 'Private' : 'Public'
         };
 
         describe.fields.forEach(field => {
@@ -121,7 +121,7 @@ export class OrgValidator {
             length: field.length,
             isCustom: field.custom,
             isRequired: field.nillable === false && field.defaultedOnCreate === false,
-            referenceTo: field.referenceTo
+            referenceTo: field.referenceTo || []
           });
         });
 
@@ -129,7 +129,7 @@ export class OrgValidator {
 
         // Validate sharing model compatibility
         if (analysis.securityContext.enforceSharingRules && 
-            describe.sharingModel === 'Private') {
+            schema.sharingModel === 'Private') {
           result.warnings.push(
             `Object ${objectName} has Private sharing model but flow runs in User mode`
           );

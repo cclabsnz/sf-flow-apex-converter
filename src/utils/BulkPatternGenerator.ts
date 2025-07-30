@@ -1,15 +1,31 @@
 import { ComprehensiveFlowAnalysis, FlowElement, FlowElementType } from './FlowAnalyzer.js';
 import { Logger } from './Logger.js';
 
-interface BulkOperation {
-  type: 'QUERY' | 'DML' | 'SUBFLOW';
-  objectType?: string;
-  operation?: string;
-  fields?: string[];
-  conditions?: string[];
-  sortOrder?: string[];
+interface BaseBulkOperation {
   elements: FlowElement[];
 }
+
+interface QueryOperation extends BaseBulkOperation {
+  type: 'QUERY';
+  objectType: string;
+  fields: string[];
+  conditions: string[];
+  sortOrder?: string[];
+}
+
+interface DMLOperation extends BaseBulkOperation {
+  type: 'DML';
+  objectType: string;
+  operation: string;
+  fields: string[];
+}
+
+interface SubflowOperation extends BaseBulkOperation {
+  type: 'SUBFLOW';
+  flowName: string;
+}
+
+type BulkOperation = QueryOperation | DMLOperation | SubflowOperation;
 
 export class BulkPatternGenerator {
   private operations: Map<string, BulkOperation> = new Map();
@@ -101,31 +117,42 @@ export class BulkPatternGenerator {
 
   private consolidateQueries(): void {
     const queryOps = Array.from(this.operations.values())
-      .filter(op => op.type === 'QUERY');
+      .filter((op): op is QueryOperation => op.type === 'QUERY');
     
     // Group by object type
-    const byObject = new Map<string, BulkOperation[]>();
+    const byObject = new Map<string, QueryOperation[]>();
     queryOps.forEach(op => {
-      if (!byObject.has(op.objectType!)) {
-        byObject.set(op.objectType!, []);
+      if (!byObject.has(op.objectType)) {
+        byObject.set(op.objectType, []);
       }
-      byObject.get(op.objectType!)!.push(op);
+      byObject.get(op.objectType)!.push(op);
     });
 
     // Consolidate queries on same object
     byObject.forEach((ops, objectType) => {
       if (ops.length > 1) {
+        const fields = new Set<string>();
+        const conditions = new Set<string>();
+        ops.forEach(op => {
+          if (op.fields) {
+            op.fields.forEach(f => fields.add(f));
+          }
+          if (op.conditions) {
+            op.conditions.forEach(c => conditions.add(c));
+          }
+        });
+
         const consolidated: BulkOperation = {
           type: 'QUERY',
           objectType,
-          fields: new Set(ops.flatMap(op => op.fields || [])),
-          conditions: new Set(ops.flatMap(op => op.conditions || [])),
+          fields: Array.from(fields),
+          conditions: Array.from(conditions),
           elements: ops.flatMap(op => op.elements)
         };
 
         // Remove individual operations
         ops.forEach(op => {
-          const key = this.generateOperationKey('QUERY', op.objectType, op.fields, op.conditions);
+          const key = this.generateOperationKey('QUERY', op.objectType, op.fields || [], op.conditions || []);
           this.operations.delete(key);
         });
 
@@ -138,10 +165,10 @@ export class BulkPatternGenerator {
 
   private optimizeDMLOperations(): void {
     const dmlOps = Array.from(this.operations.values())
-      .filter(op => op.type === 'DML');
+      .filter((op): op is DMLOperation => op.type === 'DML');
     
     // Group by object and operation type
-    const byObjectAndOp = new Map<string, BulkOperation[]>();
+    const byObjectAndOp = new Map<string, DMLOperation[]>();
     dmlOps.forEach(op => {
       const key = `${op.objectType}_${op.operation}`;
       if (!byObjectAndOp.has(key)) {
@@ -154,17 +181,24 @@ export class BulkPatternGenerator {
     byObjectAndOp.forEach((ops, key) => {
       if (ops.length > 1) {
         const [objectType, operation] = key.split('_');
+        const fields = new Set<string>();
+        ops.forEach(op => {
+          if (op.fields) {
+            op.fields.forEach(f => fields.add(f));
+          }
+        });
+
         const consolidated: BulkOperation = {
           type: 'DML',
           objectType,
           operation,
-          fields: new Set(ops.flatMap(op => op.fields || [])),
+          fields: Array.from(fields),
           elements: ops.flatMap(op => op.elements)
         };
 
         // Remove individual operations
         ops.forEach(op => {
-          const opKey = this.generateOperationKey('DML', op.objectType, op.fields, [], [op.operation!]);
+          const opKey = this.generateOperationKey('DML', op.objectType, op.fields || [], [], [op.operation!]);
           this.operations.delete(opKey);
         });
 
@@ -179,13 +213,13 @@ export class BulkPatternGenerator {
     const declarations: string[] = [];
     
     // Collection variables for each object type
-    this.operations.forEach(op => {
-      if (op.type === 'QUERY') {
+    Array.from(this.operations.values())
+      .filter((op): op is QueryOperation => op.type === 'QUERY')
+      .forEach(op => {
         const varName = `${op.objectType.toLowerCase()}List`;
         declarations.push(`List<${op.objectType}> ${varName} = new List<${op.objectType}>();`);
-        this.recordCollections.set(op.objectType!, varName);
-      }
-    });
+        this.recordCollections.set(op.objectType, varName);
+      });
 
     // Map variables for ID relationships
     if (this.idVariables.size > 0) {
@@ -198,13 +232,14 @@ export class BulkPatternGenerator {
   private generateQueryOperations(): string {
     const queries: string[] = [];
     
-    this.operations.forEach(op => {
-      if (op.type === 'QUERY') {
-        const fields = Array.from(new Set(['Id', ...(op.fields || [])]));
-        const conditions = op.conditions || [];
+    Array.from(this.operations.values())
+      .filter((op): op is QueryOperation => op.type === 'QUERY')
+      .forEach(op => {
+        const fields = Array.from(new Set(['Id', ...op.fields]));
+        const conditions = op.conditions;
         
         const query = `
-        List<${op.objectType}> ${this.recordCollections.get(op.objectType!)} = [
+        List<${op.objectType}> ${this.recordCollections.get(op.objectType)} = [
             SELECT ${fields.join(', ')}
             FROM ${op.objectType}
             ${conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : ''}
@@ -215,10 +250,9 @@ export class BulkPatternGenerator {
 
         // Add to ID map if needed
         if (this.idVariables.size > 0) {
-          queries.push(`recordsById.putAll(new Map<Id, SObject>(${this.recordCollections.get(op.objectType!)}));`);
+          queries.push(`recordsById.putAll(new Map<Id, SObject>(${this.recordCollections.get(op.objectType)}));`);
         }
-      }
-    });
+      });
 
     return queries.join('\n\n');
   }
@@ -226,8 +260,9 @@ export class BulkPatternGenerator {
   private generateDMLOperations(): string {
     const dmlOps: string[] = [];
     
-    this.operations.forEach(op => {
-      if (op.type === 'DML') {
+    Array.from(this.operations.values())
+      .filter((op): op is DMLOperation => op.type === 'DML')
+      .forEach(op => {
         const varName = `${op.objectType.toLowerCase()}ToProcess`;
         
         dmlOps.push(`List<${op.objectType}> ${varName} = new List<${op.objectType}>();`);
@@ -258,16 +293,15 @@ export class BulkPatternGenerator {
             }
             
             for (List<${op.objectType}> chunk : chunks) {
-                ${this.getDMLOperation(op.operation!)}(chunk);
+                ${this.getDMLOperation(op.operation)}(chunk);
             }
         }`);
-      }
-    });
+      });
 
     return dmlOps.join('\n\n');
   }
 
-  private generateCreateOperation(op: BulkOperation, varName: string): string {
+  private generateCreateOperation(op: DMLOperation, varName: string): string {
     return `
     for (FlowInputRecord record : flowRecords) {
         ${op.objectType} newRecord = new ${op.objectType}();
@@ -276,7 +310,7 @@ export class BulkPatternGenerator {
     }`;
   }
 
-  private generateUpdateOperation(op: BulkOperation, varName: string): string {
+  private generateUpdateOperation(op: DMLOperation, varName: string): string {
     return `
     Set<Id> recordIds = new Set<Id>(flowRecordIds);
     for (${op.objectType} record : recordsById.values()) {
@@ -286,7 +320,7 @@ export class BulkPatternGenerator {
     }`;
   }
 
-  private generateDeleteOperation(op: BulkOperation, varName: string): string {
+  private generateDeleteOperation(op: DMLOperation, varName: string): string {
     return `
     ${varName}.addAll((List<${op.objectType}>) recordsById.values());`;
   }
@@ -310,9 +344,9 @@ export class BulkPatternGenerator {
     return [
       type,
       objectType,
-      fields?.sort().join(','),
-      conditions?.sort().join(','),
-      operation?.join(',')
+      fields ? fields.sort().join(',') : undefined,
+      conditions ? conditions.sort().join(',') : undefined,
+      operation ? operation.join(',') : undefined
     ].filter(Boolean).join('_');
   }
 }

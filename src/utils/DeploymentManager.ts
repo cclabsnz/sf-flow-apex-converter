@@ -46,7 +46,7 @@ export class DeploymentManager {
 
       // Validate deployment first
       Logger.info('DeploymentManager', 'Validating deployment');
-      const validateCmd = `sf project deploy validate -x "${manifestPath}" --test-level RunSpecifiedTests --tests ${testClassName}`;
+      let validateCmd = `sf project deploy validate -x "${manifestPath}" --test-level RunSpecifiedTests --tests ${testClassName}`;
       if (targetOrg) {
         validateCmd += ` -o ${targetOrg}`;
       }
@@ -54,15 +54,16 @@ export class DeploymentManager {
       try {
         execSync(validateCmd, { stdio: 'inherit' });
       } catch (error) {
+        const errorMessage = (error as Error).message;
         return {
           success: false,
-          errors: [(error as Error).message.split('\n')]
+          errors: errorMessage.split('\n')
         };
       }
 
       // Deploy if validation succeeds
       Logger.info('DeploymentManager', 'Deploying Apex classes');
-      const deployCmd = `sf project deploy start -x "${manifestPath}" --test-level RunSpecifiedTests --tests ${testClassName}`;
+      let deployCmd = `sf project deploy start -x "${manifestPath}" --test-level RunSpecifiedTests --tests ${testClassName}`;
       if (targetOrg) {
         deployCmd += ` -o ${targetOrg}`;
       }
@@ -79,9 +80,10 @@ export class DeploymentManager {
 
     } catch (error) {
       Logger.error('DeploymentManager', 'Deployment failed', error);
+      const errorMessage = (error as Error).message;
       return {
         success: false,
-        errors: [(error as Error).message.split('\n')]
+        errors: errorMessage.split('\n')
       };
     }
   }

@@ -143,7 +143,7 @@ public ${sharingKeyword} class ${className} {
       return '';
     }
 
-    const checks = [];
+    const checks: string[] = [];
     context.requiredObjects.forEach(obj => {
       const perms = Array.from(context.requiredPermissions)
         .filter(p => p.endsWith(`_${obj}`))
