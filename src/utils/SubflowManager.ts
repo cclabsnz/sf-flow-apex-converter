@@ -3,6 +3,29 @@ import { parseStringPromise } from 'xml2js';
 import { SchemaManager } from './SchemaManager.js';
 import { Logger } from './Logger.js';
 
+interface FlowElements {
+  recordLookups?: number;
+  recordCreates?: number;
+  recordUpdates?: number;
+  recordDeletes?: number;
+  decisions?: number;
+  loops?: number;
+  assignments?: number;
+  subflows?: number;
+  actionCalls?: number;
+  total: number;
+}
+
+interface SubflowDetails {
+  name: string;
+  elements: FlowElements;
+  version: {
+    number: string;
+    status: string;
+    lastModified: string;
+  };
+}
+
 export interface SubflowAnalysis {
   flowName: string;
   shouldBulkify: boolean;
@@ -11,6 +34,15 @@ export interface SubflowAnalysis {
   dmlOperations: number;
   soqlQueries: number;
   parameters: Map<string, any>;
+  version: {
+    number: string;
+    status: string;
+    lastModified: string;
+  };
+  soqlSources: string[];
+  elements: FlowElements;
+  subflows: SubflowDetails[];
+  totalElementsWithSubflows: number;
 }
 
 export class SubflowManager {
@@ -50,35 +82,100 @@ export class SubflowManager {
   }
 
   private async getSubflowMetadata(subflowName: string): Promise<any> {
-    const query = `SELECT Id, Metadata FROM Flow WHERE DeveloperName = '${subflowName}' AND Status = 'Active'`;
+    const query = `SELECT Id, Metadata, VersionNumber, Status, LastModifiedDate FROM Flow WHERE DeveloperName = '${subflowName}' AND Status = 'Active'`;
     
+    Logger.debug('SubflowManager', `Fetching metadata for flow: ${subflowName}`, { query });
     const result = await this.connection.tooling.query(query);
+    
     if (result.records.length === 0) {
+      Logger.warn('SubflowManager', `Flow ${subflowName} not found or not active`);
       throw new Error(`Subflow ${subflowName} not found or not active`);
     }
 
-    const metadata = await parseStringPromise(result.records[0].Metadata);
-    return metadata.Flow || metadata;
+    const flow = result.records[0];
+    Logger.info('SubflowManager', `Found flow: ${subflowName}`, {
+      version: flow.VersionNumber,
+      status: flow.Status,
+      lastModified: flow.LastModifiedDate
+    });
+
+    const metadata = await parseStringPromise(flow.Metadata);
+    return {
+      ...metadata.Flow || metadata,
+      _flowVersion: {
+        version: flow.VersionNumber,
+        status: flow.Status,
+        lastModified: flow.LastModifiedDate
+      }
+    };
   }
 
-  private async analyzeApexAction(actionRef: string): Promise<boolean> {
+  private async analyzeApexAction(actionRef: string): Promise<{hasSOQL: boolean; details?: string}> {
     try {
-      const query = `SELECT Id, Body FROM ApexClass WHERE Name = '${actionRef}'`;
-      const result = await this.connection.tooling.query(query);
+      const query = `SELECT Id, Body, Name, LastModifiedDate FROM ApexClass WHERE Name = '${actionRef}'`;
+      Logger.debug('SubflowManager', `Analyzing Apex class: ${actionRef}`, { query });
       
-      if (result.records.length > 0) {
-        const apexBody = result.records[0].Body;
-        // Check for SOQL patterns in Apex
-        return apexBody.includes('[SELECT') || 
-               apexBody.includes('Database.query') ||
-               apexBody.includes('.getAll()') ||
-               apexBody.includes('.find');
+      const result = await this.connection.tooling.query(query);
+      if (result.records.length === 0) {
+        Logger.warn('SubflowManager', `Apex class not found: ${actionRef}`);
+        return { hasSOQL: false };
       }
-      return false;
+
+      const apexClass = result.records[0];
+      Logger.info('SubflowManager', `Found Apex class: ${actionRef}`, {
+        lastModified: apexClass.LastModifiedDate
+      });
+
+      const soqlPatterns = [
+        { pattern: '[SELECT', type: 'SOQL Query' },
+        { pattern: 'Database.query', type: 'Dynamic SOQL' },
+        { pattern: '.getAll()', type: 'getAll Query' },
+        { pattern: '.find', type: 'find Query' }
+      ];
+
+      const foundPatterns = soqlPatterns
+        .filter(p => apexClass.Body.includes(p.pattern))
+        .map(p => p.type);
+
+      if (foundPatterns.length > 0) {
+        const details = `Found ${foundPatterns.join(', ')}`;
+        Logger.info('SubflowManager', `${actionRef} contains SOQL operations`, { details });
+        return { hasSOQL: true, details };
+      }
+
+      Logger.debug('SubflowManager', `No SOQL operations found in ${actionRef}`);
+      return { hasSOQL: false };
     } catch (error) {
       Logger.warn('SubflowManager', `Failed to analyze Apex class ${actionRef}`, error);
-      return false;
+      return { hasSOQL: false };
     }
+  }
+
+  private countFlowElements(metadata: any): FlowElements {
+    const elements: FlowElements = { total: 0 };
+    
+    const elementTypes = [
+      { key: 'recordLookups', name: 'Record Lookups' },
+      { key: 'recordCreates', name: 'Record Creates' },
+      { key: 'recordUpdates', name: 'Record Updates' },
+      { key: 'recordDeletes', name: 'Record Deletes' },
+      { key: 'decisions', name: 'Decisions' },
+      { key: 'loops', name: 'Loops' },
+      { key: 'assignments', name: 'Assignments' },
+      { key: 'actionCalls', name: 'Apex Actions' },
+      { key: 'subflows', name: 'Subflows' }
+    ];
+
+    for (const type of elementTypes) {
+      if (metadata[type.key]) {
+        const count = this.countElements(metadata[type.key]);
+        elements[type.key] = count;
+        elements.total += count;
+        Logger.debug('SubflowManager', `Found ${count} ${type.name}`);
+      }
+    }
+
+    return elements;
   }
 
   private async analyzeSubflowMetadata(metadata: any): Promise<SubflowAnalysis> {
@@ -87,6 +184,15 @@ export class SubflowManager {
     let complexity = 0;
     let soqlInLoop = false;
     const parameters = new Map<string, any>();
+    const soqlSources = new Set<string>();
+    const flowVersion = metadata._flowVersion;
+    const subflowDetails: SubflowDetails[] = [];
+    let totalElementsWithSubflows = 0;
+
+    Logger.info('SubflowManager', `Analyzing flow version ${flowVersion.version}`, {
+      status: flowVersion.status,
+      lastModified: flowVersion.lastModified
+    });
 
     // Count operations
     if (metadata.recordCreates) dmlOperations += this.countElements(metadata.recordCreates);
@@ -97,6 +203,7 @@ export class SubflowManager {
     if (metadata.recordLookups) {
       const lookups = Array.isArray(metadata.recordLookups) ? metadata.recordLookups : [metadata.recordLookups];
       soqlQueries += lookups.length;
+      soqlSources.add('Record Lookups');
       
       // Check for operations in loops
       if (metadata.loops) {
@@ -114,10 +221,14 @@ export class SubflowManager {
               // Check Apex Actions
               if (element.actionCall || element.type?.[0] === 'ActionCall') {
                 const actionRef = element.actionCall?.[0]?.actionName?.[0] || element.actionName?.[0];
-                if (actionRef && await this.analyzeApexAction(actionRef.replace('apex_', ''))) {
-                  soqlInLoop = true;
-                  soqlQueries++;
-                  break;
+                if (actionRef) {
+                  const apexAnalysis = await this.analyzeApexAction(actionRef.replace('apex_', ''));
+                  if (apexAnalysis.hasSOQL) {
+                    soqlInLoop = true;
+                    soqlQueries++;
+                    soqlSources.add(`Apex Action: ${actionRef} (${apexAnalysis.details})`);
+                    break;
+                  }
                 }
               }
               
@@ -130,6 +241,7 @@ export class SubflowManager {
                     if (subflowAnalysis.soqlQueries > 0) {
                       soqlInLoop = true;
                       soqlQueries += subflowAnalysis.soqlQueries;
+                    soqlSources.add(`Subflow: ${subflowRef}`);
                       break;
                     }
                   } catch (error) {
@@ -147,11 +259,13 @@ export class SubflowManager {
     if (metadata.dynamicChoiceSets) {
       const choiceSets = Array.isArray(metadata.dynamicChoiceSets) ? metadata.dynamicChoiceSets : [metadata.dynamicChoiceSets];
       soqlQueries += choiceSets.length;
+      soqlSources.add('Dynamic Choice Sets');
     }
 
     // Record-Triggered Flow
     if (metadata.trigger && metadata.trigger[0]?.type?.[0] === 'RecordAfterSave') {
       soqlQueries++; // Count implicit query for the triggering record
+      soqlSources.add('Record-Triggered Flow');
     }
 
     // Formula Elements with Cross-Object References
@@ -160,6 +274,7 @@ export class SubflowManager {
       for (const formula of formulas) {
         if (formula.expression?.[0]?.includes('.')) {
           soqlQueries++; // Count cross-object reference queries
+          soqlSources.add('Cross-Object Formula References');
         }
       }
     }
@@ -184,15 +299,70 @@ export class SubflowManager {
 
     const shouldBulkify = this.shouldBulkifySubflow(dmlOperations, soqlQueries, complexity, metadata, soqlInLoop);
 
-    return {
+    // Count elements in current flow
+    const elements = this.countFlowElements(metadata);
+    totalElementsWithSubflows = elements.total;
+
+    // Process all subflows (not just those in loops)
+    if (metadata.subflows) {
+      const allSubflows = Array.isArray(metadata.subflows) ? metadata.subflows : [metadata.subflows];
+      for (const subflow of allSubflows) {
+        const subflowRef = subflow.flowName?.[0];
+        if (subflowRef) {
+          try {
+            const subflowAnalysis = await this.analyzeSubflow(subflowRef);
+            subflowDetails.push({
+              name: subflowRef,
+              elements: subflowAnalysis.elements,
+              version: subflowAnalysis.version
+            });
+            totalElementsWithSubflows += subflowAnalysis.elements.total;
+          } catch (error) {
+            Logger.warn('SubflowManager', `Failed to analyze subflow ${subflowRef}`, error);
+          }
+        }
+      }
+    }
+
+    const analysis = {
       flowName: metadata.name?.[0] || 'Unknown',
       shouldBulkify,
       bulkificationReason: this.getBulkificationReason(dmlOperations, soqlQueries, complexity, metadata, soqlInLoop),
       complexity,
       dmlOperations,
       soqlQueries,
-      parameters
+      parameters,
+      version: {
+        number: flowVersion.version,
+        status: flowVersion.status,
+        lastModified: flowVersion.lastModified
+      },
+      soqlSources: Array.from(soqlSources),
+      elements,
+      subflows: subflowDetails,
+      totalElementsWithSubflows
     };
+
+    Logger.info('SubflowManager', `Analysis complete for flow: ${analysis.flowName}`, {
+      version: analysis.version,
+      elements: {
+        direct: elements.total,
+        withSubflows: totalElementsWithSubflows,
+        breakdown: elements
+      },
+      subflows: subflowDetails.map(sf => ({
+        name: sf.name,
+        elements: sf.elements.total,
+        version: sf.version.number
+      })),
+      soqlQueries: analysis.soqlQueries,
+      soqlSources: analysis.soqlSources,
+      dmlOperations: analysis.dmlOperations,
+      complexity: analysis.complexity,
+      shouldBulkify: analysis.shouldBulkify
+    });
+
+    return analysis;
   }
 
   private countElements(elements: any): number {
