@@ -6,6 +6,7 @@ import { Connection } from 'jsforce';
 import { SchemaManager } from './utils/SchemaManager.js';
 import { SubflowManager } from './utils/SubflowManager.js';
 import { FlowAnalyzer } from './utils/FlowAnalyzer.js';
+import { ApexGenerator } from './utils/ApexGenerator.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseStringPromise } from 'xml2js';
@@ -29,6 +30,8 @@ Options:
   --from-org       Fetch flow directly from the connected org
   --target-org    Specify which org to use (alias or username)
   --verbose        Show detailed analysis and progress
+  --deploy        Deploy the generated Apex class
+  --test-only     Validate deployment without actually deploying
 
 Arguments:
   flowName          The Flow API Name (not the label) from your Salesforce org
@@ -149,7 +152,36 @@ Note: When specifying a flow from your org, use the Flow API Name (DeveloperName
     const subflowManager = new SubflowManager(conn, schemaManager);
     const flowAnalyzer = new FlowAnalyzer(conn, schemaManager, subflowManager);
     const analysis = await flowAnalyzer.analyzeFlowComprehensive(flowMetadata.records[0]);
-    console.log(JSON.stringify(analysis, null, 2));
+    
+    // Generate and optionally deploy Apex
+    const apexClass = ApexGenerator.generateApex(analysis);
+    console.log('\nGenerated Apex Class:');
+    console.log('===================\n');
+    console.log(apexClass);
+
+    if (args.includes('--deploy') || args.includes('--test-only')) {
+      console.log('\nDeploying Apex Class...');
+      const result = await ApexGenerator.deployApex(
+        analysis,
+        args.includes('--test-only'),
+        args.includes('--target-org') ? args[args.indexOf('--target-org') + 1] : undefined,
+        conn
+      );
+
+      if (result.success) {
+        console.log('Deployment successful!');
+      } else {
+        console.error('Deployment failed:');
+        result.errors.forEach(error => console.error(error));
+        process.exit(1);
+      }
+    }
+
+    if (args.includes('--verbose')) {
+      console.log('\nFlow Analysis:');
+      console.log('==============\n');
+      console.log(JSON.stringify(analysis, null, 2));
+    }
 
   } catch (error) {
     const err = error as Error;

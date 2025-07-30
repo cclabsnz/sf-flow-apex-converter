@@ -44,6 +44,16 @@ export interface FlowCondition {
   };
 }
 
+export interface SecurityContext {
+  isSystemMode: boolean;
+  enforceObjectPermissions: boolean;
+  enforceFieldPermissions: boolean;
+  enforceSharingRules: boolean;
+  requiredPermissions: Set<string>;
+  requiredObjects: Set<string>;
+  requiredFields: Map<string, Set<string>>;
+}
+
 export interface ComprehensiveFlowAnalysis {
   flowName: string;
   processType: string;
@@ -54,9 +64,65 @@ export interface ComprehensiveFlowAnalysis {
   elements: Map<string, FlowElement>;
   objectDependencies: Set<string>;
   recommendations: string[];
+  securityContext: SecurityContext;
+  apiVersion: string;
 }
 
 export class FlowAnalyzer {
+  private analyzeSecurityContext(metadata: any): SecurityContext {
+    const securityContext: SecurityContext = {
+      isSystemMode: metadata.runInMode?.[0] === 'SYSTEM' || false,
+      enforceObjectPermissions: metadata.runInMode?.[0] === 'USER' || false,
+      enforceFieldPermissions: metadata.runInMode?.[0] === 'USER' || false,
+      enforceSharingRules: metadata.runInMode?.[0] === 'USER' || false,
+      requiredPermissions: new Set<string>(),
+      requiredObjects: new Set<string>(),
+      requiredFields: new Map<string, Set<string>>()
+    };
+
+    // Analyze required permissions from each element
+    for (const elementType of Object.values(FlowElementType)) {
+      if (metadata[elementType]) {
+        const elements = Array.isArray(metadata[elementType]) ? metadata[elementType] : [metadata[elementType]];
+        
+        elements.forEach((element: any) => {
+          // Object permissions
+          if (element.object?.[0]) {
+            const objectName = element.object[0];
+            securityContext.requiredObjects.add(objectName);
+
+            // Add CRUD permissions based on operation type
+            if (elementType === FlowElementType.RECORD_CREATE) {
+              securityContext.requiredPermissions.add(`Create_${objectName}`);
+            }
+            if (elementType === FlowElementType.RECORD_UPDATE) {
+              securityContext.requiredPermissions.add(`Edit_${objectName}`);
+            }
+            if (elementType === FlowElementType.RECORD_DELETE) {
+              securityContext.requiredPermissions.add(`Delete_${objectName}`);
+            }
+            if (elementType === FlowElementType.RECORD_LOOKUP) {
+              securityContext.requiredPermissions.add(`Read_${objectName}`);
+            }
+          }
+
+          // Field permissions
+          if (element.fields) {
+            const objectName = element.object?.[0];
+            if (objectName) {
+              const fields = new Set<string>();
+              element.fields.forEach((field: any) => {
+                fields.add(field);
+              });
+              securityContext.requiredFields.set(objectName, fields);
+            }
+          }
+        });
+      }
+    }
+
+    return securityContext;
+  }
   private async getOrgInfo(targetOrg?: string): Promise<{alias: string; username: string; instanceUrl: string}> {
     try {
       // Get current default org
@@ -161,7 +227,9 @@ export class FlowAnalyzer {
       bulkificationScore: 100,
       elements: new Map(),
       objectDependencies: new Set(),
-      recommendations: []
+      recommendations: [],
+      securityContext: this.analyzeSecurityContext(metadata),
+      apiVersion: metadata.apiVersion?.[0] || '58.0'
     };
 
     try {
