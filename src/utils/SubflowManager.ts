@@ -54,11 +54,73 @@ export class SubflowManager {
     private schemaManager: SchemaManager
   ) {}
 
+  private formatFlowAnalysis(analysis: SubflowAnalysis, indent: string = ''): string {
+    const lines: string[] = [];
+    
+    // Flow header
+    lines.push(`${indent}Flow: ${analysis.flowName}`);
+    lines.push(`${indent}Version: ${analysis.version.number} (${analysis.version.status})`);
+    lines.push(`${indent}Last Modified: ${analysis.version.lastModified}`);
+    lines.push('');
+
+    // Elements breakdown
+    lines.push(`${indent}Elements:`);
+    lines.push(`${indent}  Direct elements: ${analysis.elements.total}`);
+    lines.push(`${indent}  Total (with subflows): ${analysis.totalElementsWithSubflows}`);
+    lines.push(`${indent}  Breakdown:`);
+    Object.entries(analysis.elements)
+      .filter(([key]) => key !== 'total')
+      .filter(([_, value]) => value && value > 0)
+      .forEach(([key, value]) => {
+        lines.push(`${indent}    ${key}: ${value}`);
+      });
+    lines.push('');
+
+    // SOQL Analysis
+    if (analysis.soqlQueries > 0) {
+      lines.push(`${indent}SOQL Analysis:`);
+      lines.push(`${indent}  Total Queries: ${analysis.soqlQueries}`);
+      lines.push(`${indent}  Sources:`);
+      analysis.soqlSources.forEach(source => {
+        lines.push(`${indent}    - ${source}`);
+      });
+      lines.push('');
+    }
+
+    // DML Operations
+    if (analysis.dmlOperations > 0) {
+      lines.push(`${indent}DML Operations: ${analysis.dmlOperations}`);
+      lines.push('');
+    }
+
+    // Subflows
+    if (analysis.subflows && analysis.subflows.length > 0) {
+      lines.push(`${indent}Subflows (${analysis.subflows.length}):`);
+      analysis.subflows.forEach(subflow => {
+        lines.push(`${indent}  ${subflow.name}:`);
+        lines.push(`${indent}    Version: ${subflow.version.number}`);
+        lines.push(`${indent}    Elements: ${subflow.elements.total}`);
+      });
+      lines.push('');
+    }
+
+    // Bulkification
+    lines.push(`${indent}Bulkification:`);
+    lines.push(`${indent}  Required: ${analysis.shouldBulkify}`);
+    lines.push(`${indent}  Reason: ${analysis.bulkificationReason}`);
+    lines.push(`${indent}  Complexity Score: ${analysis.complexity}`);
+
+    return lines.join('\n');
+  }
+
   async analyzeSubflow(subflowName: string): Promise<SubflowAnalysis> {
-    Logger.info('SubflowManager', `Starting analysis of subflow: ${subflowName}`);
+    console.log(`\nAnalyzing flow: ${subflowName}...`);
+    
     if (this.subflowCache.has(subflowName)) {
       Logger.debug('SubflowManager', `Using cached analysis for subflow: ${subflowName}`);
-      return this.subflowCache.get(subflowName)!;
+      const analysis = this.subflowCache.get(subflowName)!;
+      console.log(this.formatFlowAnalysis(analysis));
+      return analysis;
     }
 
     try {
@@ -67,12 +129,10 @@ export class SubflowManager {
       const analysis = await this.analyzeSubflowMetadata(metadata);
       
       this.subflowCache.set(subflowName, analysis);
-      Logger.info('SubflowManager', `Analysis complete for subflow: ${subflowName}`, {
-        dmlOperations: analysis.dmlOperations,
-        soqlQueries: analysis.soqlQueries,
-        complexity: analysis.complexity,
-        shouldBulkify: analysis.shouldBulkify
-      });
+      
+      // Print detailed analysis
+      console.log(this.formatFlowAnalysis(analysis));
+      
       return analysis;
       
     } catch (error) {
