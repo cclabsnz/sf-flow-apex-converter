@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import 'abort-controller/polyfill.js';
+import '#abort-controller';
 import { Connection } from 'jsforce';
 import { SchemaManager } from './utils/SchemaManager.js';
 import { SubflowManager } from './utils/SubflowManager.js';
