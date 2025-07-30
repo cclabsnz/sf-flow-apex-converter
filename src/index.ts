@@ -18,7 +18,7 @@ async function main() {
 Salesforce Flow to Apex Converter
 
 Usage:
-  sf-flow-apex-converter <flowName>
+  sf-flow-apex-converter <flowName> [options]
   sf-flow-apex-converter [options]
 
 Options:
@@ -26,6 +26,9 @@ Options:
   -h, --help        Show help information
   --log-level      Set log level (debug, info, warn, error)
   --quiet          Disable logging
+  --from-org       Fetch flow directly from the connected org
+  --target-org    Specify which org to use (alias or username)
+  --verbose        Show detailed analysis and progress
 
 Arguments:
   flowName          The Flow API Name (not the label) from your Salesforce org
@@ -111,19 +114,33 @@ Note: When specifying a flow from your org, use the Flow API Name (DeveloperName
         }]
       };
     } else {
-      // Treat input as flow name
-      // TODO: Add proper authentication
-      const conn = new Connection({
-        // Add connection details
-      });
-
+      // Initialize connection and managers
+      const conn = new Connection({});
       const schemaManager = new SchemaManager(conn);
       const subflowManager = new SubflowManager(conn, schemaManager);
       const flowAnalyzer = new FlowAnalyzer(conn, schemaManager, subflowManager);
 
-      flowMetadata = await conn.tooling.query(`SELECT Id, Metadata FROM Flow WHERE DeveloperName = '${input}' AND Status = 'Active'`);
-      if (flowMetadata.records.length === 0) {
-        throw new Error(`Flow ${input} not found or not active`);
+      if (args.includes('--from-org')) {
+        // Check for target org
+        const targetOrgIndex = args.indexOf('--target-org');
+        const targetOrg = targetOrgIndex !== -1 ? args[targetOrgIndex + 1] : undefined;
+        
+        Logger.info('CLI', `Fetching flow ${input} from org`);
+        try {
+          const analysis = await flowAnalyzer.analyzeFlowFromOrg(input, targetOrg);
+          console.log('\nFlow Analysis Results:');
+          console.log('======================\n');
+          console.log(JSON.stringify(analysis, null, 2));
+          process.exit(0);
+        } catch (error) {
+          Logger.error('CLI', `Failed to analyze flow from org: ${error.message}`);
+          throw error;
+        }
+      } else {
+        flowMetadata = await conn.tooling.query(`SELECT Id, Metadata FROM Flow WHERE DeveloperName = '${input}' AND Status = 'Active'`);
+        if (flowMetadata.records.length === 0) {
+          throw new Error(`Flow ${input} not found or not active`);
+        }
       }
     }
 

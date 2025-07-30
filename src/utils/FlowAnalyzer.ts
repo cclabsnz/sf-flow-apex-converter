@@ -3,6 +3,10 @@ import { parseStringPromise } from 'xml2js';
 import { SchemaManager } from './SchemaManager.js';
 import { SubflowManager } from './SubflowManager.js';
 import { Logger } from './Logger.js';
+import { execSync } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
 export enum FlowElementType {
   RECORD_CREATE = 'recordCreates',
@@ -53,11 +57,90 @@ export interface ComprehensiveFlowAnalysis {
 }
 
 export class FlowAnalyzer {
+  private async getOrgInfo(targetOrg?: string): Promise<{alias: string; username: string; instanceUrl: string}> {
+    try {
+      // Get current default org
+      let orgCmd = 'sf org display';
+      if (targetOrg) {
+        orgCmd += ` -o ${targetOrg}`;
+        Logger.info('FlowAnalyzer', `Using specified org: ${targetOrg}`);
+      }
+
+      // Get detailed org info
+      const orgDetails = execSync(`${orgCmd} --json`, { encoding: 'utf8' });
+      const details = JSON.parse(orgDetails);
+      
+      return {
+        alias: details.result.alias || 'Unknown',
+        username: details.result.username,
+        instanceUrl: details.result.instanceUrl
+      };
+    } catch (error) {
+      Logger.error('FlowAnalyzer', 'Failed to get org info', error);
+      throw new Error('Failed to get org info. Make sure you are logged in with "sf org login web"');
+    }
+  }
+
+  private async fetchFlowFromOrg(flowName: string, targetOrg?: string): Promise<any> {
+    try {
+      // Get org info first
+      const orgInfo = await this.getOrgInfo(targetOrg);
+      Logger.info('FlowAnalyzer', `Connected to org: ${orgInfo.alias} (${orgInfo.username})`);
+      Logger.info('FlowAnalyzer', `Instance URL: ${orgInfo.instanceUrl}`);
+      Logger.info('FlowAnalyzer', `Fetching flow ${flowName} from org`);
+      
+      // Create temp directory
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-analysis-'));
+      const manifestPath = path.join(tempDir, 'package.xml');
+      
+      // Create package.xml
+      const packageXml = `<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>${flowName}</members>
+        <name>Flow</name>
+    </types>
+    <version>58.0</version>
+</Package>`;
+      
+      fs.writeFileSync(manifestPath, packageXml);
+      
+      // Retrieve flow using sf cli
+      Logger.debug('FlowAnalyzer', 'Executing sf cli retrieve command');
+      execSync(`sf project retrieve start -x "${manifestPath}"`, {
+        stdio: 'inherit'
+      });
+      
+      // Read the retrieved flow
+      const flowPath = path.join('force-app', 'main', 'default', 'flows', `${flowName}.flow-meta.xml`);
+      if (!fs.existsSync(flowPath)) {
+        throw new Error(`Flow ${flowName} not found in org or not active`);
+      }
+      
+      const flowContent = fs.readFileSync(flowPath, 'utf8');
+      
+      // Clean up
+      fs.rmSync(tempDir, { recursive: true, force: true });
+      
+      // Parse XML
+      const flowMetadata = await parseStringPromise(flowContent);
+      return flowMetadata;
+      
+    } catch (error) {
+      Logger.error('FlowAnalyzer', `Failed to fetch flow from org: ${error.message}`, error);
+      throw error;
+    }
+  }
   constructor(
     private connection: Connection,
     private schemaManager: SchemaManager,
     private subflowManager: SubflowManager
   ) {}
+
+  async analyzeFlowFromOrg(flowName: string, targetOrg?: string): Promise<ComprehensiveFlowAnalysis> {
+    const flowMetadata = await this.fetchFlowFromOrg(flowName, targetOrg);
+    return this.analyzeFlowComprehensive(flowMetadata);
+  }
 
   async analyzeFlowComprehensive(flowMetadata: any): Promise<ComprehensiveFlowAnalysis> {
     Logger.info('FlowAnalyzer', 'Starting flow analysis');
