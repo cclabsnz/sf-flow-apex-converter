@@ -97,6 +97,15 @@ my-sf-project/
 │               └── MyFlow.flow-meta.xml
 ```
 
+### Commands
+
+```bash
+# Show help information
+sf-flow-apex-converter --help
+
+# Show version
+sf-flow-apex-converter --version
+
 ### Running the Tool
 
 ```bash

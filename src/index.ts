@@ -9,6 +9,28 @@ import { FlowAnalyzer } from './utils/FlowAnalyzer.js';
 async function main() {
   const args = process.argv.slice(2);
   
+  const HELP_TEXT = `
+Salesforce Flow to Apex Converter
+
+Usage:
+  sf-flow-apex-converter <flowName>
+  sf-flow-apex-converter [options]
+
+Options:
+  -v, --version     Show version number
+  -h, --help        Show help information
+
+Examples:
+  sf-flow-apex-converter MyFlow
+  sf-flow-apex-converter /path/to/MyFlow.flow-meta.xml
+  sf-flow-apex-converter ./force-app/main/default/flows/MyFlow.flow-meta.xml
+`;
+
+  if (args[0] === '--help' || args[0] === '-h') {
+    console.log(HELP_TEXT);
+    process.exit(0);
+  }
+
   if (args[0] === '--version' || args[0] === '-v') {
     const { version } = require('../package.json');
     console.log(`v${version}`);
