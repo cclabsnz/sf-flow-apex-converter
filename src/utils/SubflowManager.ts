@@ -187,7 +187,7 @@ export class SubflowManager {
     return {
       flowName: metadata.name?.[0] || 'Unknown',
       shouldBulkify,
-      bulkificationReason: this.getBulkificationReason(dmlOperations, soqlQueries, complexity, metadata),
+      bulkificationReason: this.getBulkificationReason(dmlOperations, soqlQueries, complexity, metadata, soqlInLoop),
       complexity,
       dmlOperations,
       soqlQueries,
