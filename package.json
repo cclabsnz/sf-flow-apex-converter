@@ -4,9 +4,6 @@
   "description": "CLI tool to convert Salesforce Flows into bulkified Apex classes",
   "main": "dist/index.js",
   "type": "module",
-  "imports": {
-    "#abort-controller": "abort-controller/polyfill.js"
-  },
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",

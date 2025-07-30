@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import '#abort-controller';
+// @ts-ignore
+require('abort-controller/polyfill');
 import { Connection } from 'jsforce';
 import { SchemaManager } from './utils/SchemaManager.js';
 import { SubflowManager } from './utils/SubflowManager.js';
