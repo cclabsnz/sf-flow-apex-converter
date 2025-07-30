@@ -59,7 +59,7 @@ export class FlowAnalyzer {
   ) {}
 
   async analyzeFlowComprehensive(flowMetadata: any): Promise<ComprehensiveFlowAnalysis> {
-    const metadata = flowMetadata.metadata;
+    const metadata = flowMetadata.Metadata || flowMetadata.metadata;
     
     const analysis: ComprehensiveFlowAnalysis = {
       flowName: flowMetadata.definition.DeveloperName,

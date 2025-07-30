@@ -72,10 +72,18 @@ Note: When specifying a flow from your org, use the Flow API Name (DeveloperName
         throw new Error(`Flow file not found: ${filePath}`);
       }
       flowContent = fs.readFileSync(filePath, 'utf8');
-      const parsed = await parseStringPromise(flowContent);
+      let parsed;
+      try {
+        parsed = await parseStringPromise(flowContent);
+        if (!parsed.Flow) {
+          throw new Error('Invalid Flow XML: Missing <Flow> root element');
+        }
+      } catch (parseError) {
+        throw new Error(`Failed to parse Flow XML: ${(parseError as Error).message}`);
+      }
       flowMetadata = {
         records: [{
-          Metadata: flowContent,
+          Metadata: parsed.Flow,
           definition: {
             DeveloperName: path.basename(filePath, '.flow-meta.xml'),
             ProcessType: parsed.Flow?.processType?.[0] || 'Flow'
