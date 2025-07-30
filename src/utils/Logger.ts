@@ -35,21 +35,33 @@ export class Logger {
   static debug(context: string, message: string, data?: any) {
     if (this.shouldLog(LogLevel.DEBUG)) {
       const logMessage = this.formatMessage(LogLevel.DEBUG, context, message);
-      console.debug(logMessage, data ? '\n', data : '');
+      if (data !== undefined) {
+        console.debug(`${logMessage}\n`, data);
+      } else {
+        console.debug(logMessage);
+      }
     }
   }
 
   static info(context: string, message: string, data?: any) {
     if (this.shouldLog(LogLevel.INFO)) {
       const logMessage = this.formatMessage(LogLevel.INFO, context, message);
-      console.info(logMessage, data ? '\n', data : '');
+      if (data !== undefined) {
+        console.info(`${logMessage}\n`, data);
+      } else {
+        console.info(logMessage);
+      }
     }
   }
 
   static warn(context: string, message: string, data?: any) {
     if (this.shouldLog(LogLevel.WARN)) {
       const logMessage = this.formatMessage(LogLevel.WARN, context, message);
-      console.warn(logMessage, data ? '\n', data : '');
+      if (data !== undefined) {
+        console.warn(`${logMessage}\n`, data);
+      } else {
+        console.warn(logMessage);
+      }
     }
   }
 
