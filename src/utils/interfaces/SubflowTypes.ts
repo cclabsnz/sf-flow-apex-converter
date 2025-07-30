@@ -13,7 +13,7 @@ export interface FlowElements {
 }
 
 export interface FlowVersion {
-  number: string;
+  version: string;  // Use version instead of number to match FlowMetadata._flowVersion
   status: string;
   lastModified: string;
 }
@@ -73,7 +73,22 @@ export interface SubflowAnalysis {
   apexRecommendation: ApexRecommendation;
 }
 
+export interface FlowElementMetadata {
+  name?: string[];
+  type?: string[];
+  flowName?: string[];
+  value?: string[];
+  dataType?: string[];
+  processMetadataValues?: any[];
+  inputAssignments?: any[];
+  outputAssignments?: any[];
+  expression?: string[];
+  elements?: any[];
+  subflow?: any;  // Can be array, string, or object
+}
+
 export interface FlowMetadata {
+  [key: string]: any;  // Add index signature
   name?: string[];
   recordCreates?: any[];
   recordUpdates?: any[];
