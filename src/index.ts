@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import 'abort-controller/polyfill';
 import { Connection } from 'jsforce';
 import { SchemaManager } from './utils/SchemaManager.js';
 import { SubflowManager } from './utils/SubflowManager.js';
@@ -7,6 +8,13 @@ import { FlowAnalyzer } from './utils/FlowAnalyzer.js';
 
 async function main() {
   const args = process.argv.slice(2);
+  
+  if (args[0] === '--version' || args[0] === '-v') {
+    const { version } = require('../package.json');
+    console.log(`v${version}`);
+    process.exit(0);
+  }
+
   if (args.length === 0) {
     console.error('Please provide a flow name');
     process.exit(1);
