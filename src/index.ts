@@ -12,7 +12,7 @@ import { parseStringPromise } from 'xml2js';
 import { Logger, LogLevel } from './utils/Logger.js';
 
 async function main() {
-  const args = process.argv.slice(2);
+  let args = process.argv.slice(2);
   
   const HELP_TEXT = `
 Salesforce Flow to Apex Converter
