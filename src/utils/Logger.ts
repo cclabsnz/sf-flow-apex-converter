@@ -5,9 +5,13 @@ export enum LogLevel {
   ERROR = 'ERROR'
 }
 
+import fs from 'fs';
+import path from 'path';
+
 export class Logger {
   private static logLevel: LogLevel = LogLevel.INFO;
   private static logEnabled: boolean = true;
+  private static logFile: string = path.join(process.cwd(), 'sf-flow-apex-converter.log');
 
   static setLogLevel(level: LogLevel) {
     Logger.logLevel = level;
@@ -32,13 +36,17 @@ export class Logger {
     return `[${timestamp}] ${level.padEnd(5)} [${context}] ${message}`;
   }
 
+  private static writeToFile(message: string) {
+    fs.appendFileSync(this.logFile, message + '\n');
+  }
+
   static debug(context: string, message: string, data?: any) {
     if (this.shouldLog(LogLevel.DEBUG)) {
       const logMessage = this.formatMessage(LogLevel.DEBUG, context, message);
       if (data !== undefined) {
-        console.debug(`${logMessage}\n`, data);
+        this.writeToFile(`${logMessage}\n${JSON.stringify(data, null, 2)}`);
       } else {
-        console.debug(logMessage);
+        this.writeToFile(logMessage);
       }
     }
   }
@@ -47,9 +55,9 @@ export class Logger {
     if (this.shouldLog(LogLevel.INFO)) {
       const logMessage = this.formatMessage(LogLevel.INFO, context, message);
       if (data !== undefined) {
-        console.info(`${logMessage}\n`, data);
+        this.writeToFile(`${logMessage}\n${JSON.stringify(data, null, 2)}`);
       } else {
-        console.info(logMessage);
+        this.writeToFile(logMessage);
       }
     }
   }
@@ -58,9 +66,9 @@ export class Logger {
     if (this.shouldLog(LogLevel.WARN)) {
       const logMessage = this.formatMessage(LogLevel.WARN, context, message);
       if (data !== undefined) {
-        console.warn(`${logMessage}\n`, data);
+        this.writeToFile(`${logMessage}\n${JSON.stringify(data, null, 2)}`);
       } else {
-        console.warn(logMessage);
+        this.writeToFile(logMessage);
       }
     }
   }
@@ -68,12 +76,12 @@ export class Logger {
   static error(context: string, message: string, error?: Error | any) {
     if (this.shouldLog(LogLevel.ERROR)) {
       const logMessage = this.formatMessage(LogLevel.ERROR, context, message);
-      console.error(logMessage);
+      this.writeToFile(logMessage);
       if (error) {
         if (error instanceof Error) {
-          console.error(error.stack);
+          this.writeToFile(error.stack || error.message);
         } else {
-          console.error(error);
+          this.writeToFile(JSON.stringify(error, null, 2));
         }
       }
     }
