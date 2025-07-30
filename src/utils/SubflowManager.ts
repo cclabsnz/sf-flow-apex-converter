@@ -14,6 +14,7 @@ interface FlowElements {
   subflows?: number;
   actionCalls?: number;
   total: number;
+  [key: string]: number | undefined;
 }
 
 interface SubflowDetails {
