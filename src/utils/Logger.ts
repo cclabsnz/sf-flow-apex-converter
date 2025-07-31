@@ -8,6 +8,34 @@ export enum LogLevel {
 import fs from 'fs';
 import path from 'path';
 
+const COLORS = {
+  reset: '\x1b[0m',
+  bright: '\x1b[1m',
+  dim: '\x1b[2m',
+  underscore: '\x1b[4m',
+  blink: '\x1b[5m',
+  reverse: '\x1b[7m',
+  hidden: '\x1b[8m',
+  
+  black: '\x1b[30m',
+  red: '\x1b[31m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  blue: '\x1b[34m',
+  magenta: '\x1b[35m',
+  cyan: '\x1b[36m',
+  white: '\x1b[37m',
+  
+  bgBlack: '\x1b[40m',
+  bgRed: '\x1b[41m',
+  bgGreen: '\x1b[42m',
+  bgYellow: '\x1b[43m',
+  bgBlue: '\x1b[44m',
+  bgMagenta: '\x1b[45m',
+  bgCyan: '\x1b[46m',
+  bgWhite: '\x1b[47m'
+};
+
 export class Logger {
   private static logLevel: LogLevel = LogLevel.INFO;
   private static logEnabled: boolean = true;
@@ -31,7 +59,23 @@ export class Logger {
     return messageLevelIndex >= currentLevelIndex;
   }
 
-  private static formatMessage(level: LogLevel, context: string, message: string): string {
+  private static getLevelColor(level: LogLevel): string {
+    switch (level) {
+      case LogLevel.DEBUG: return COLORS.cyan;
+      case LogLevel.INFO: return COLORS.green;
+      case LogLevel.WARN: return COLORS.yellow;
+      case LogLevel.ERROR: return COLORS.red;
+      default: return COLORS.reset;
+    }
+  }
+
+  private static formatConsoleMessage(level: LogLevel, context: string, message: string): string {
+    const color = this.getLevelColor(level);
+    const timestamp = new Date().toLocaleTimeString();
+    return `${color}${COLORS.bright}[${timestamp}]${COLORS.reset} ${color}${level.padEnd(5)}${COLORS.reset} ${COLORS.blue}[${context}]${COLORS.reset} ${message}`;
+  }
+
+  private static formatFileMessage(level: LogLevel, context: string, message: string): string {
     const timestamp = new Date().toISOString();
     return `[${timestamp}] ${level.padEnd(5)} [${context}] ${message}`;
   }
@@ -40,43 +84,58 @@ export class Logger {
     fs.appendFileSync(this.logFile, message + '\n');
   }
 
-  static debug(context: string, message: string, data?: any) {
-    if (this.shouldLog(LogLevel.DEBUG)) {
-      const logMessage = this.formatMessage(LogLevel.DEBUG, context, message);
+  private static log(level: LogLevel, context: string, message: string, data?: any) {
+    if (this.shouldLog(level)) {
+      const consoleMessage = this.formatConsoleMessage(level, context, message);
+      const fileMessage = this.formatFileMessage(level, context, message);
+
+      // Log to console
+      console.log(consoleMessage);
       if (data !== undefined) {
-        this.writeToFile(`${logMessage}\n${JSON.stringify(data, null, 2)}`);
-      } else {
-        this.writeToFile(logMessage);
+        if (typeof data === 'object') {
+          console.log(COLORS.dim + JSON.stringify(data, null, 2) + COLORS.reset);
+        } else {
+          console.log(COLORS.dim + data + COLORS.reset);
+        }
+      }
+
+      // Log to file
+      this.writeToFile(fileMessage);
+      if (data !== undefined) {
+        this.writeToFile(typeof data === 'object' ? JSON.stringify(data, null, 2) : String(data));
       }
     }
+  }
+
+  static debug(context: string, message: string, data?: any) {
+    this.log(LogLevel.DEBUG, context, message, data);
   }
 
   static info(context: string, message: string, data?: any) {
-    if (this.shouldLog(LogLevel.INFO)) {
-      const logMessage = this.formatMessage(LogLevel.INFO, context, message);
-      if (data !== undefined) {
-        this.writeToFile(`${logMessage}\n${JSON.stringify(data, null, 2)}`);
-      } else {
-        this.writeToFile(logMessage);
-      }
-    }
+    this.log(LogLevel.INFO, context, message, data);
   }
 
   static warn(context: string, message: string, data?: any) {
-    if (this.shouldLog(LogLevel.WARN)) {
-      const logMessage = this.formatMessage(LogLevel.WARN, context, message);
-      if (data !== undefined) {
-        this.writeToFile(`${logMessage}\n${JSON.stringify(data, null, 2)}`);
-      } else {
-        this.writeToFile(logMessage);
-      }
-    }
+    this.log(LogLevel.WARN, context, message, data);
   }
 
   static error(context: string, message: string, error?: Error | any) {
     if (this.shouldLog(LogLevel.ERROR)) {
-      const logMessage = this.formatMessage(LogLevel.ERROR, context, message);
-      this.writeToFile(logMessage);
+      const consoleMessage = this.formatConsoleMessage(LogLevel.ERROR, context, message);
+      const fileMessage = this.formatFileMessage(LogLevel.ERROR, context, message);
+
+      // Log to console
+      console.error(consoleMessage);
+      if (error) {
+        if (error instanceof Error) {
+          console.error(COLORS.red + (error.stack || error.message) + COLORS.reset);
+        } else {
+          console.error(COLORS.red + JSON.stringify(error, null, 2) + COLORS.reset);
+        }
+      }
+
+      // Log to file
+      this.writeToFile(fileMessage);
       if (error) {
         if (error instanceof Error) {
           this.writeToFile(error.stack || error.message);
@@ -85,5 +144,22 @@ export class Logger {
         }
       }
     }
+  }
+
+  static progress(context: string, message: string, current: number, total: number) {
+    if (this.shouldLog(LogLevel.INFO)) {
+      const percentage = Math.round((current / total) * 100);
+      const progressBar = this.createProgressBar(percentage);
+      const consoleMessage = this.formatConsoleMessage(LogLevel.INFO, context, `${message} ${progressBar} ${percentage}%`);
+      console.log(consoleMessage);
+    }
+  }
+
+  private static createProgressBar(percentage: number): string {
+    const width = 20;
+    const completed = Math.floor((width * percentage) / 100);
+    const remaining = width - completed;
+    const bar = COLORS.green + '█'.repeat(completed) + COLORS.dim + '█'.repeat(remaining) + COLORS.reset;
+    return `[${bar}]`;
   }
 }

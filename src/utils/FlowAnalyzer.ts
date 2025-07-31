@@ -1,5 +1,5 @@
 import { Connection } from 'jsforce';
-import { parseStringPromise } from 'xml2js';
+import { MetadataParser } from './parsers/MetadataParser.js';
 import { SchemaManager } from './SchemaManager.js';
 import { SubflowManager } from './SubflowManager.js';
 import { Logger } from './Logger.js';
@@ -189,7 +189,7 @@ export class FlowAnalyzer {
       fs.rmSync(tempDir, { recursive: true, force: true });
       
       // Parse XML
-      const flowMetadata = await parseStringPromise(flowContent);
+      const flowMetadata = await MetadataParser.parseMetadata(flowContent);
       return flowMetadata;
       
     } catch (error) {

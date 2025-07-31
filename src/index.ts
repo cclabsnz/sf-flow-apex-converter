@@ -9,7 +9,7 @@ import { FlowAnalyzer } from './utils/FlowAnalyzer.js';
 import { ApexGenerator } from './utils/ApexGenerator.js';
 import * as fs from 'fs';
 import * as path from 'path';
-import { parseStringPromise } from 'xml2js';
+import { MetadataParser } from './utils/parsers/MetadataParser.js';
 import { Logger, LogLevel } from './utils/Logger.js';
 
 async function main() {
@@ -100,12 +100,12 @@ Note: When specifying a flow from your org, use the Flow API Name (DeveloperName
       flowContent = fs.readFileSync(filePath, 'utf8');
       let parsed;
       try {
-        parsed = await parseStringPromise(flowContent);
-        if (!parsed.Flow) {
-          throw new Error('Invalid Flow XML: Missing <Flow> root element');
+        parsed = await MetadataParser.parseMetadata(flowContent);
+        if (!parsed) {
+          throw new Error('Invalid Flow metadata');
         }
       } catch (parseError) {
-        throw new Error(`Failed to parse Flow XML: ${(parseError as Error).message}`);
+        throw new Error(`Failed to parse Flow metadata: ${(parseError as Error).message}`);
       }
       flowMetadata = {
         records: [{

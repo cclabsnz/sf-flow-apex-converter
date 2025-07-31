@@ -246,7 +246,7 @@ export class SubflowParser {
             inputParams: reference.inputAssignments?.length || 0,
             outputParams: reference.outputAssignments?.length || 0
           });
-        } catch (error) {
+        } catch (error: any) {
           Logger.error('SubflowParser', `Failed to analyze subflow: ${flowName}`, error);
         }
       }
