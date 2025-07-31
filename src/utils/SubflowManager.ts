@@ -1,7 +1,7 @@
 import { Connection } from 'jsforce';
 import { Logger } from './Logger.js';
 import { SchemaManager } from './SchemaManager.js';
-import { SubflowParser } from './SubflowParser.js';
+import { SubflowParser } from './parsers/SubflowParser.js';
 import { SubflowAnalyzer } from './analyzers/SubflowAnalyzer.js';
 import { SubflowAnalysis, SubflowDetails } from './interfaces/SubflowTypes.js';
 
