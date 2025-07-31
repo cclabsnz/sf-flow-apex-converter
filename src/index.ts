@@ -133,7 +133,42 @@ Note: When specifying a flow from your org, use the Flow API Name (DeveloperName
       };
       
       const analysis = await flowAnalyzer.analyzeFlowComprehensive(wrappedMetadata);
-      console.log(JSON.stringify(analysis, null, 2));
+      // Output basic analysis
+      console.log({
+        flowName: analysis.flowName,
+        processType: analysis.processType,
+        totalElements: analysis.totalElements,
+        dmlOperations: analysis.dmlOperations,
+        soqlQueries: analysis.soqlQueries,
+        bulkificationScore: analysis.bulkificationScore
+      });
+
+      // Output loop analysis if loops are present
+      if (analysis.loops && analysis.loops.length > 0) {
+        console.log('\nLoop Analysis:');
+        analysis.loops.forEach(loop => {
+          console.log(`\nLoop processing ${loop.loopVariables.inputCollection}:`);
+          
+          if (loop.containsDML) {
+            console.log(`  - Contains ${loop.nestedElements.dml} DML operation(s) - Should be moved outside loop`);
+          }
+          if (loop.containsSOQL) {
+            console.log(`  - Contains ${loop.nestedElements.soql} SOQL queries - Should be consolidated before loop`);
+          }
+          if (loop.containsSubflows) {
+            console.log(`  - Contains ${loop.nestedElements.subflows} subflow call(s) - Consider bulkifying`);
+          }
+          if (loop.nestedElements.other > 0) {
+            console.log(`  - Contains ${loop.nestedElements.other} other operation(s)`);
+          }
+        });
+      }
+
+      // Output recommendations
+      if (analysis.recommendations.length > 0) {
+        console.log('\nRecommendations:');
+        analysis.recommendations.forEach(rec => console.log(` - ${rec}`));
+      }
       process.exit(0);
     } else {
       // Initialize managers without XML lookup for org-based flows
@@ -152,7 +187,42 @@ Note: When specifying a flow from your org, use the Flow API Name (DeveloperName
           const analysis = await flowAnalyzer.analyzeFlowFromOrg(input, targetOrg);
           console.log('\nFlow Analysis Results:');
           console.log('======================\n');
-          console.log(JSON.stringify(analysis, null, 2));
+          
+          // Output basic analysis
+          console.log({
+            flowName: analysis.flowName,
+            processType: analysis.processType,
+            totalElements: analysis.totalElements,
+            dmlOperations: analysis.dmlOperations,
+            soqlQueries: analysis.soqlQueries,
+            bulkificationScore: analysis.bulkificationScore
+          });
+
+          // Output loop analysis if loops are present
+          if (analysis.loops && analysis.loops.length > 0) {
+            console.log('\nLoop Analysis:');
+            analysis.loops.forEach(loop => {
+              console.log(`\nLoop processing ${loop.loopVariables.inputCollection}:`);
+              
+              if (loop.containsDML) {
+                console.log(`  - Contains ${loop.nestedElements.dml} DML operation(s) - Should be moved outside loop`);
+              }
+              if (loop.containsSOQL) {
+                console.log(`  - Contains ${loop.nestedElements.soql} SOQL queries - Should be consolidated before loop`);
+              }
+              if (loop.containsSubflows) {
+                console.log(`  - Contains ${loop.nestedElements.subflows} subflow call(s) - Consider bulkifying`);
+              }
+              if (loop.nestedElements.other > 0) {
+                console.log(`  - Contains ${loop.nestedElements.other} other operation(s)`);
+              }
+            });
+          }
+
+          // Output recommendations
+          if (analysis.recommendations.length > 0) {
+            console.log('\nRecommendations:');
+            analysis.recommendations.forEach(rec => console.log(` - ${rec}`));
           process.exit(0);
         } catch (error) {
           Logger.error('CLI', `Failed to analyze flow from org: ${(error as Error).message}`);
