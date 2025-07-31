@@ -211,7 +211,8 @@ export class FlowAnalyzer {
   constructor(
     private connection: Connection,
     private schemaManager: SchemaManager,
-    private subflowManager: SubflowManager
+    private subflowManager: SubflowManager,
+    private getFlowXml?: (flowName: string) => string | undefined
   ) {}
 
   async analyzeFlowFromOrg(flowName: string, targetOrg?: string): Promise<ComprehensiveFlowAnalysis> {
@@ -271,50 +272,89 @@ export class FlowAnalyzer {
 
   private async parseAllElements(metadata: any, analysis: ComprehensiveFlowAnalysis): Promise<void> {
     Logger.debug('FlowAnalyzer', 'Starting element parsing');
-    for (const elementType of Object.values(FlowElementType)) {
-      if (metadata[elementType]) {
-        const elements = Array.isArray(metadata[elementType]) 
-          ? metadata[elementType] 
-          : [metadata[elementType]];
-        
-        analysis.totalElements += elements.length;
-        
-        if (elementType === FlowElementType.RECORD_CREATE ||
-            elementType === FlowElementType.RECORD_UPDATE ||
-            elementType === FlowElementType.RECORD_DELETE) {
-          analysis.dmlOperations += elements.length;
-        }
-        
-        if (elementType === FlowElementType.RECORD_LOOKUP) {
-          analysis.soqlQueries += elements.length;
-        }
+    Logger.debug('FlowAnalyzer', `Metadata keys: ${Object.keys(metadata)}`);
+    
+    // Map of flow types to their possible XML tag names
+    const typeToTags = {
+      [FlowElementType.RECORD_CREATE]: ['recordcreates', 'recordCreates'],
+      [FlowElementType.RECORD_UPDATE]: ['recordupdates', 'recordUpdates'],
+      [FlowElementType.RECORD_DELETE]: ['recorddeletes', 'recordDeletes'],
+      [FlowElementType.RECORD_LOOKUP]: ['recordlookups', 'recordLookups'],
+      [FlowElementType.RECORD_ROLLBACK]: ['recordrollbacks', 'recordRollbacks'],
+      [FlowElementType.ASSIGNMENT]: ['assignments'],
+      [FlowElementType.DECISION]: ['decisions'],
+      [FlowElementType.LOOP]: ['loops'],
+      [FlowElementType.SUBFLOW]: ['subflows'],
+      [FlowElementType.SCREEN]: ['screens']
+    };
 
-        for (const element of elements) {
-          const flowElement: FlowElement = {
-            type: elementType as FlowElementType,
-            name: element.name?.[0] || 'Unnamed',
-            properties: this.parseProperties(element),
-            connectors: this.parseConnectors(element)
-          };
+    for (const elementType of Object.values(FlowElementType)) {
+      Logger.debug('FlowAnalyzer', `Checking element type: ${elementType}`);
+      
+      // Get possible tag names for this type
+      const possibleTags = typeToTags[elementType] || [elementType.toLowerCase()];
+      Logger.debug('FlowAnalyzer', `Possible tags for ${elementType}: ${possibleTags.join(', ')}`);
+      
+      // Check all possible tags
+      for (const tag of possibleTags) {
+        Logger.debug('FlowAnalyzer', `Checking tag: ${tag}, exists: ${!!metadata[tag]}`);
+        if (metadata[tag]) {
+          Logger.debug('FlowAnalyzer', `Found elements of type: ${elementType} with tag: ${tag}`);
+          const elements = Array.isArray(metadata[tag]) 
+            ? metadata[tag] 
+            : [metadata[tag]];
+        
+          analysis.totalElements += elements.length;
           
-          analysis.elements.set(flowElement.name, flowElement);
+          if (elementType === FlowElementType.RECORD_CREATE ||
+              elementType === FlowElementType.RECORD_UPDATE ||
+              elementType === FlowElementType.RECORD_DELETE) {
+            analysis.dmlOperations += elements.length;
+          }
           
-          if (element.object) {
-            analysis.objectDependencies.add(element.object[0]);
+          if (elementType === FlowElementType.RECORD_LOOKUP) {
+            analysis.soqlQueries += elements.length;
           }
 
-          if (elementType === FlowElementType.SUBFLOW) {
-            const subflowName = element.flowName?.[0];
-            if (subflowName) {
-              try {
-                const subflowAnalysis = await this.subflowManager.analyzeSubflow(subflowName);
-                analysis.subflows.push(subflowAnalysis);
-                // Aggregate metrics from subflow
-                analysis.totalElements += subflowAnalysis.totalElementsWithSubflows;
-                analysis.dmlOperations += subflowAnalysis.cumulativeDmlOperations;
-                analysis.soqlQueries += subflowAnalysis.cumulativeSoqlQueries;
-              } catch (error) {
-                Logger.warn('FlowAnalyzer', `Could not analyze subflow ${subflowName}: ${(error as Error).message}`);
+          for (const element of elements) {
+            const flowElement: FlowElement = {
+              type: elementType as FlowElementType,
+              name: element.name?.[0] || 'Unnamed',
+              properties: this.parseProperties(element),
+              connectors: this.parseConnectors(element)
+            };
+            
+            analysis.elements.set(flowElement.name, flowElement);
+            
+            if (element.object) {
+              analysis.objectDependencies.add(element.object[0]);
+            }
+
+            if (elementType === FlowElementType.SUBFLOW) {
+              const subflowName = element.flowname?.[0];
+              Logger.debug('FlowAnalyzer', `Found subflow reference: ${subflowName}`);
+              if (subflowName) {
+                try {
+                  // Try to get local XML file first
+                  let subflowXml: string | undefined;
+                  if (this.getFlowXml) {
+                    subflowXml = this.getFlowXml(subflowName);
+                    Logger.debug('FlowAnalyzer', `Subflow XML found: ${!!subflowXml}`);
+                    if (!subflowXml) {
+                      Logger.info('FlowAnalyzer', `Skipping missing subflow ${subflowName} in local mode`);
+                      continue;
+                    }
+                  }
+                  
+                  const subflowAnalysis = await this.subflowManager.analyzeSubflow(subflowName, 0, subflowXml);
+                  analysis.subflows.push(subflowAnalysis);
+                  // Aggregate metrics from subflow
+                  analysis.totalElements += subflowAnalysis.totalElementsWithSubflows;
+                  analysis.dmlOperations += subflowAnalysis.cumulativeDmlOperations;
+                  analysis.soqlQueries += subflowAnalysis.cumulativeSoqlQueries;
+                } catch (error) {
+                  Logger.warn('FlowAnalyzer', `Could not analyze subflow ${subflowName}: ${(error as Error).message}`);
+                }
               }
             }
           }

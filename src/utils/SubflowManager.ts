@@ -12,10 +12,12 @@ export class SubflowManager {
   private analyzer: SubflowAnalyzer;
 
   constructor(
-    private connection: Connection,
-    private schemaManager: SchemaManager
+    private connection: Connection | null,
+    private schemaManager: SchemaManager,
+    private getFlowXml?: (flowName: string) => string | undefined
   ) {
-    this.parser = new SubflowParser(connection);
+    // Only pass connection if not doing local file analysis
+    this.parser = new SubflowParser(getFlowXml ? null : connection);
     this.analyzer = new SubflowAnalyzer();
   }
 
@@ -110,7 +112,11 @@ export class SubflowManager {
     return lines.join('\n');
   }
 
-  async analyzeSubflow(subflowName: string, depth: number = 0): Promise<SubflowAnalysis> {
+  async analyzeSubflow(subflowName: string, depth: number = 0, xml?: string): Promise<SubflowAnalysis> {
+    // Try to get local XML if not provided
+    if (!xml && this.getFlowXml) {
+      xml = this.getFlowXml(subflowName);
+    }
     if (depth >= SubflowManager.MAX_RECURSION_DEPTH) {
       Logger.warn('SubflowManager', `Maximum recursion depth reached for subflow: ${subflowName}`);
       return {
@@ -137,22 +143,22 @@ export class SubflowManager {
       };
     }
 
-    console.log(`\nAnalyzing flow: ${subflowName}...`);
+    /* console.log(`
+Analyzing flow: ${subflowName}...`); */
     
     if (this.subflowCache.has(subflowName)) {
       Logger.debug('SubflowManager', `Using cached analysis for subflow: ${subflowName}`);
       const analysis = this.subflowCache.get(subflowName)!;
-      console.log(this.formatFlowAnalysis(analysis));
+      /* console.log(this.formatFlowAnalysis(analysis)); */
       return analysis;
     }
 
     try {
       Logger.debug('SubflowManager', `Fetching metadata for subflow: ${subflowName}`);
-      const metadata = await this.parser.getSubflowMetadata(subflowName);
-      const analysis = await this.analyzer.analyzeMetadata(metadata, depth);
+      const parsedMetadata = await this.parser.getSubflowMetadata(subflowName, false, xml);
+      const analysis = await this.analyzer.analyzeMetadata(parsedMetadata, depth);
       
       this.subflowCache.set(subflowName, analysis);
-      console.log(this.formatFlowAnalysis(analysis));
       return analysis;
       
     } catch (error) {
