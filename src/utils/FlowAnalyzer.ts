@@ -189,8 +189,16 @@ export class FlowAnalyzer {
       fs.rmSync(tempDir, { recursive: true, force: true });
       
       // Parse XML
-      const flowMetadata = await MetadataParser.parseMetadata(flowContent);
-      return flowMetadata;
+      const parsedMetadata = await MetadataParser.parseMetadata(flowContent);
+      
+      // Wrap the parsed metadata in the expected structure
+      return {
+        Metadata: parsedMetadata,
+        definition: {
+          DeveloperName: flowName,
+          ProcessType: parsedMetadata?.processType?.[0] || 'Flow'
+        }
+      };
       
     } catch (error) {
       Logger.error('FlowAnalyzer', `Failed to fetch flow from org: ${(error as Error).message}`, error);
