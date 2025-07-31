@@ -1,5 +1,4 @@
-import { FlowMetadata } from '../../interfaces/SubflowTypes.js';
-import { LoopContext } from '../../interfaces/FlowTypes.js';
+import { FlowMetadata, LoopContext } from '../../../types';
 import { Logger } from '../../Logger.js';
 
 export class LoopContextAnalyzer {

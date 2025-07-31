@@ -1,28 +1,9 @@
-import { OperationSummary } from './FlowAnalysisTypes.js';
-
-export interface FlowVersion {
-  version: string;
-  status: string;
-  lastModified: string;
-}
+import { FlowBaseType, FlowMetadata, FlowVersion } from '../../types/elements';
+import { FlowElementsImpl } from '../analyzers/FlowElementsImpl';
 
 export interface DataFlow {
   inputs: Map<string, string>;
   outputs: Map<string, string>;
-}
-
-export interface FlowElements {
-  recordLookups?: number;
-  recordCreates?: number;
-  recordUpdates?: number;
-  recordDeletes?: number;
-  decisions?: number;
-  loops?: number;
-  assignments?: number;
-  subflows?: number;
-  actionCalls?: number;
-  total: number;
-  [key: string]: number | undefined;
 }
 
 export interface SubflowReference {
@@ -42,7 +23,7 @@ export interface SubflowReference {
   parentElement?: string;
   metadata?: FlowMetadata;
   analysis?: {
-    elements: FlowElements;
+    elements: FlowElementsImpl;
     dmlOperations: number;
     soqlQueries: number;
     complexity: number;
@@ -52,7 +33,7 @@ export interface SubflowReference {
 
 export interface SubflowDetails {
   name: string;
-  elements: FlowElements;
+  elements: FlowElementsImpl;
   version: FlowVersion;
   references: SubflowReference[];
   dataFlow: DataFlow;
@@ -76,39 +57,9 @@ export interface FlowElementMetadata {
   expression?: string[];
   elements?: Array<Record<string, unknown>>;
   subflow?: Record<string, unknown> | string[] | string;
-}
-
-export interface FlowBaseType {
-  type?: string[];
-  name?: string[];
-  flowName?: string[];
   object?: string[];
+  records?: string[];
   [key: string]: unknown;
 }
 
-export interface FlowMetadata {
-  [key: string]: unknown;
-  name?: string[];
-  flow?: {
-    subflows?: FlowBaseType[];
-    [key: string]: unknown;
-  };
-  steps?: FlowBaseType[];
-  nodes?: FlowBaseType[];
-  recordCreates?: FlowBaseType[];
-  recordUpdates?: FlowBaseType[];
-  recordDeletes?: FlowBaseType[];
-  recordLookups?: FlowBaseType[];
-  decisions?: FlowBaseType[];
-  loops?: FlowBaseType[];
-  assignments?: FlowBaseType[];
-  subflows?: FlowBaseType[];
-  actionCalls?: FlowBaseType[];
-  dynamicChoiceSets?: FlowBaseType[];
-  formulas?: FlowBaseType[];
-  variables?: FlowBaseType[];
-  trigger?: FlowBaseType[];
-  processMetadataValues?: FlowBaseType[];
-  _flowVersion: FlowVersion;
-  runInMode?: string[];
-}
+export type { FlowBaseType, FlowMetadata, FlowVersion };

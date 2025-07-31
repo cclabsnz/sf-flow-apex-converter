@@ -1,4 +1,4 @@
-import { SubflowDetails, ApexRecommendation } from '../interfaces/SubflowTypes.js';
+import { SubflowDetails, ApexRecommendation } from '../../types';
 import { Logger } from '../Logger.js';
 
 export class ApexRecommender {

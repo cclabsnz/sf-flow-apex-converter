@@ -1,19 +1,12 @@
 import { Logger } from '../Logger.js';
-import { FlowMetadata, SubflowAnalysis, SubflowDetails } from '../interfaces/SubflowTypes.js';
-import { ComplexityAnalyzer } from './ComplexityAnalyzer.js';
+import { FlowMetadata } from '../interfaces/types.js';
+import { SubflowAnalysis } from '../interfaces/analysis/FlowAnalysis.js';
+import { ComplexityAnalyzer } from './subflow/ComplexityAnalyzer.js';
 import { MetricsCalculator } from './MetricsCalculator.js';
 import { ApexRecommender } from './ApexRecommender.js';
 
 export class SubflowAnalyzer {
-  private complexityAnalyzer: ComplexityAnalyzer;
-  private metricsCalculator: MetricsCalculator;
-  private apexRecommender: ApexRecommender;
-
-  constructor() {
-    this.complexityAnalyzer = new ComplexityAnalyzer();
-    this.metricsCalculator = new MetricsCalculator();
-    this.apexRecommender = new ApexRecommender();
-  }
+  private apexRecommender = new ApexRecommender();
 
   async analyzeMetadata(
     metadata: FlowMetadata,
@@ -27,11 +20,11 @@ export class SubflowAnalyzer {
     });
 
     // Calculate complexity
-    const complexity = this.complexityAnalyzer.calculateComplexity(metadata);
+    const complexity = ComplexityAnalyzer.calculateComplexity(metadata);
     let cumulativeComplexity = complexity;
 
     // Calculate metrics
-    const metrics = this.metricsCalculator.calculateMetrics(metadata);
+    const metrics = MetricsCalculator.calculateMetrics(metadata);
     let cumulativeDmlOperations = metrics.dmlOperations;
     let cumulativeSoqlQueries = metrics.soqlQueries;
 
@@ -52,8 +45,6 @@ export class SubflowAnalyzer {
       new Set<string>()
     );
 
-    // Initialize operation summary
-    // Initialize operation summary with this flow's operations
     const operationSummary = {
       dmlOperations: [{
         sourceFlow: flowName,
@@ -81,10 +72,9 @@ export class SubflowAnalyzer {
 
     const analysis: SubflowAnalysis = {
       processType: 'Flow',
-      recommendations: [],
       apiVersion: metadata._flowVersion?.version || '1.0',
       bulkificationScore: 100,
-      totalElements: metrics.elements.total,
+      totalElements: metrics.elements.size,
       flowName,
       shouldBulkify,
       bulkificationReason: this.getBulkificationReason(
@@ -105,12 +95,14 @@ export class SubflowAnalyzer {
       soqlSources: Array.from(metrics.soqlSources),
       dmlSources: Array.from(metrics.dmlSources),
       isInLoop: loopInfo?.isInLoop ?? false,
-      loopContext: loopInfo?.loopContext,
+      loopContexts: metrics.loopContexts,
       elements: metrics.elements,
       subflows: [],  // TODO: Pass actual subflows when available
-      totalElementsWithSubflows: metrics.elements.total,
+      totalElementsWithSubflows: metrics.elements.size,
       operationSummary,
-      apexRecommendation
+      depth,
+      loops: metrics.loops || [],
+      recommendations: [apexRecommendation]
     };
     return analysis;
   }

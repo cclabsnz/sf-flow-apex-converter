@@ -30,7 +30,7 @@ export class SOQLAnalyzer {
     }
 
     // Record-Triggered Flow
-    if (metadata.trigger && metadata.trigger[0]?.type?.[0] === 'RecordAfterSave') {
+    if (Array.isArray(metadata.trigger?.[0]?.type) && metadata.trigger[0].type[0] === 'RecordAfterSave') {
       queries++; // Count implicit query for the triggering record
       sources.add('Record-Triggered Flow');
     }
@@ -39,7 +39,7 @@ export class SOQLAnalyzer {
     if (metadata.formulas) {
       const formulas = Array.isArray(metadata.formulas) ? metadata.formulas : [metadata.formulas];
       for (const formula of formulas) {
-        if (formula.expression?.[0]?.includes('.')) {
+        if (typeof formula.expression?.[0] === 'string' && formula.expression[0].includes('.')) {
           queries++; // Count cross-object reference queries
           sources.add('Cross-Object Formula References');
         }
