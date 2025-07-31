@@ -38,6 +38,14 @@ export interface SubflowReference {
   }>;
   isInLoop: boolean;
   parentElement?: string;
+  metadata?: FlowMetadata;
+  analysis?: {
+    elements: FlowElements;
+    dmlOperations: number;
+    soqlQueries: number;
+    complexity: number;
+    nestedSubflows: SubflowReference[];
+  };
 }
 
 export interface SubflowDetails {
