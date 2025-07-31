@@ -17,9 +17,10 @@ export class SubflowAnalyzer {
 
   async analyzeMetadata(
     metadata: FlowMetadata,
-    depth: number = 0
+    depth: number = 0,
+    flowName: string = 'Unknown'
   ): Promise<SubflowAnalysis> {
-    Logger.info('SubflowAnalyzer', `Analyzing flow version ${metadata._flowVersion.version}`, {
+    Logger.info('SubflowAnalyzer', `Analyzing flow ${flowName} version ${metadata._flowVersion.version}`, {
       status: metadata._flowVersion.status,
       lastModified: metadata._flowVersion.lastModified
     });
@@ -51,7 +52,7 @@ export class SubflowAnalyzer {
     );
 
     return {
-      flowName: metadata.name?.[0] || 'Unknown',
+      flowName,
       shouldBulkify,
       bulkificationReason: this.getBulkificationReason(
         metrics.dmlOperations,
