@@ -112,14 +112,25 @@ export class SubflowManager {
     return lines.join('\n');
   }
 
-  async analyzeSubflow(subflowName: string, depth: number = 0, xml?: string, flowName?: string): Promise<SubflowAnalysis> {
+  async analyzeSubflow(
+    subflowName: string, 
+    depth: number = 0, 
+    xml?: string, 
+    flowName?: string,
+    loopInfo?: { isInLoop: boolean; loopContext: string }
+  ): Promise<SubflowAnalysis> {
     // Try to get local XML if not provided
     if (!xml && this.getFlowXml) {
       xml = this.getFlowXml(subflowName);
     }
     if (depth >= SubflowManager.MAX_RECURSION_DEPTH) {
       Logger.warn('SubflowManager', `Maximum recursion depth reached for subflow: ${subflowName}`);
-      return {
+      const emptyAnalysis: SubflowAnalysis = {
+        processType: 'Flow',
+        recommendations: [],
+        apiVersion: '1.0',
+        bulkificationScore: 100,
+        totalElements: 0,
         flowName: subflowName,
         shouldBulkify: true,
         bulkificationReason: 'Maximum recursion depth reached',
@@ -132,15 +143,26 @@ export class SubflowManager {
         parameters: new Map(),
         version: { version: '0', status: 'Unknown', lastModified: new Date().toISOString() },
         soqlSources: [],
+        dmlSources: [],
+        isInLoop: false,
         elements: { total: 0 },
         subflows: [],
         totalElementsWithSubflows: 0,
+        operationSummary: {
+          dmlOperations: [],
+          soqlQueries: [],
+          totalOperations: {
+            dml: { total: 0, inLoop: 0 },
+            soql: { total: 0, inLoop: 0 }
+          }
+        },
         apexRecommendation: {
           shouldSplit: false,
           reason: 'Max recursion depth reached',
           suggestedClasses: ['MainFlowProcessor']
         }
       };
+      return emptyAnalysis;
     }
 
     /* console.log(`
@@ -156,7 +178,12 @@ Analyzing flow: ${subflowName}...`); */
     try {
       Logger.debug('SubflowManager', `Fetching metadata for subflow: ${subflowName}`);
       const parsedMetadata = await this.parser.getSubflowMetadata(subflowName, false, xml);
-      const analysis = await this.analyzer.analyzeMetadata(parsedMetadata, depth, flowName || subflowName);
+      const analysis = await this.analyzer.analyzeMetadata(
+        parsedMetadata, 
+        depth, 
+        flowName || subflowName,
+        loopInfo
+      );
       
       this.subflowCache.set(subflowName, analysis);
       return analysis;

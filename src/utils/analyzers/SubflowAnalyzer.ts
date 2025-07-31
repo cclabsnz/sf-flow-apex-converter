@@ -18,7 +18,8 @@ export class SubflowAnalyzer {
   async analyzeMetadata(
     metadata: FlowMetadata,
     depth: number = 0,
-    flowName: string = 'Unknown'
+    flowName: string = 'Unknown',
+    loopInfo?: { isInLoop: boolean; loopContext: string }
   ): Promise<SubflowAnalysis> {
     Logger.info('SubflowAnalyzer', `Analyzing flow ${flowName} version ${metadata._flowVersion.version}`, {
       status: metadata._flowVersion.status,
@@ -39,7 +40,7 @@ export class SubflowAnalyzer {
       metrics.soqlQueries,
       complexity,
       metadata,
-      metrics.soqlInLoop
+      metrics.soqlInLoop || (loopInfo?.isInLoop ?? false)
     );
 
     // Calculate apex class split recommendation
@@ -51,7 +52,39 @@ export class SubflowAnalyzer {
       new Set<string>()
     );
 
-    return {
+    // Initialize operation summary
+    // Initialize operation summary with this flow's operations
+    const operationSummary = {
+      dmlOperations: [{
+        sourceFlow: flowName,
+        count: metrics.dmlOperations,
+        sources: Array.from(metrics.dmlSources),
+        inLoop: loopInfo?.isInLoop ?? false
+      }],
+      soqlQueries: [{
+        sourceFlow: flowName,
+        count: metrics.soqlQueries,
+        sources: Array.from(metrics.soqlSources),
+        inLoop: metrics.soqlInLoop || (loopInfo?.isInLoop ?? false)
+      }],
+      totalOperations: {
+        dml: {
+          total: metrics.dmlOperations,
+          inLoop: loopInfo?.isInLoop ? metrics.dmlOperations : 0
+        },
+        soql: {
+          total: metrics.soqlQueries,
+          inLoop: (metrics.soqlInLoop || loopInfo?.isInLoop) ? metrics.soqlQueries : 0
+        }
+      }
+    };
+
+    const analysis: SubflowAnalysis = {
+      processType: 'Flow',
+      recommendations: [],
+      apiVersion: metadata._flowVersion?.version || '1.0',
+      bulkificationScore: 100,
+      totalElements: metrics.elements.total,
       flowName,
       shouldBulkify,
       bulkificationReason: this.getBulkificationReason(
@@ -59,7 +92,7 @@ export class SubflowAnalyzer {
         metrics.soqlQueries,
         complexity,
         metadata,
-        metrics.soqlInLoop
+        metrics.soqlInLoop || (loopInfo?.isInLoop ?? false)
       ),
       complexity,
       cumulativeComplexity,
@@ -70,11 +103,16 @@ export class SubflowAnalyzer {
       parameters: metrics.parameters,
       version: metadata._flowVersion,
       soqlSources: Array.from(metrics.soqlSources),
+      dmlSources: Array.from(metrics.dmlSources),
+      isInLoop: loopInfo?.isInLoop ?? false,
+      loopContext: loopInfo?.loopContext,
       elements: metrics.elements,
       subflows: [],  // TODO: Pass actual subflows when available
       totalElementsWithSubflows: metrics.elements.total,
+      operationSummary,
       apexRecommendation
     };
+    return analysis;
   }
 
   private shouldBulkifySubflow(
