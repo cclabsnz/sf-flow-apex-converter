@@ -90,6 +90,22 @@ export interface FlowElementMetadata {
 export interface FlowMetadata {
   [key: string]: any;  // Add index signature
   name?: string[];
+  flow?: {
+    subflows?: any[];
+    [key: string]: any;
+  };
+  steps?: Array<{
+    type?: string[];
+    name?: string[];
+    flowName?: string[];
+    [key: string]: any;
+  }>;
+  nodes?: Array<{
+    type?: string[];
+    name?: string[];
+    flowName?: string[];
+    [key: string]: any;
+  }>;
   recordCreates?: any[];
   recordUpdates?: any[];
   recordDeletes?: any[];
