@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { MetadataParser } from './utils/parsers/MetadataParser.js';
 import { Logger, LogLevel } from './utils/Logger.js';
+import { FlowMetadata } from './types/elements';
 
 async function main() {
   let args = process.argv.slice(2);
@@ -125,10 +126,10 @@ Note: When specifying a flow from your org, use the Flow API Name (DeveloperName
       
       const parsedMetadata = await MetadataParser.parseMetadata(flowContent);
       const wrappedMetadata = {
-        Metadata: parsedMetadata.flow || parsedMetadata,
+        Metadata: parsedMetadata,
         definition: {
           DeveloperName: flowName,
-          ProcessType: (parsedMetadata.flow || parsedMetadata)?.processType?.[0] || 'Flow'
+          ProcessType: parsedMetadata.processType?.[0] || 'Flow'
         }
       };
       
@@ -167,7 +168,7 @@ Note: When specifying a flow from your org, use the Flow API Name (DeveloperName
       // Output recommendations
       if (analysis.recommendations.length > 0) {
         console.log('\nRecommendations:');
-        analysis.recommendations.forEach(rec => console.log(` - ${rec}`));
+        analysis.recommendations.forEach(rec => console.log(` - ${rec.reason}`));
       }
       process.exit(0);
     } else {
@@ -222,7 +223,8 @@ Note: When specifying a flow from your org, use the Flow API Name (DeveloperName
           // Output recommendations
           if (analysis.recommendations.length > 0) {
             console.log('\nRecommendations:');
-            analysis.recommendations.forEach(rec => console.log(` - ${rec}`));
+            analysis.recommendations.forEach(rec => console.log(` - ${rec.reason}`));
+          }
           process.exit(0);
         } catch (error) {
           Logger.error('CLI', `Failed to analyze flow from org: ${(error as Error).message}`);

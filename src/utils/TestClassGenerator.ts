@@ -1,4 +1,4 @@
-import { SecurityContext } from './FlowAnalyzer.js';
+import { SecurityContext } from './interfaces/types.js';
 
 export class TestClassGenerator {
   generateTestClass(
@@ -8,7 +8,7 @@ export class TestClassGenerator {
   ): string {
     const testClassName = `${className}_Test`;
     
-    const testMethods = [];
+    const testMethods: string[] = [];
     const requiredObjects = Array.from(securityContext.requiredObjects);
     
     // Generate test data setup

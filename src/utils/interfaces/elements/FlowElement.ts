@@ -35,3 +35,9 @@ export interface FlowCondition {
     booleanValue?: boolean;
   };
 }
+
+export interface ElementRef {
+  targetReference: string;
+  conditionLogic?: string;
+  conditions?: FlowCondition[];
+}
