@@ -8,6 +8,27 @@ A CLI tool that converts Salesforce Flows into bulkified Apex classes, with buil
 ## Key Features
 
 ### Flow Analysis
+
+The tool performs comprehensive flow analysis including:
+
+1. Loop Analysis
+   - Detection of DML operations in loops
+   - SOQL query usage within loops
+   - Subflow calls inside loops
+   - Nested element counting
+   - Loop context tracking
+
+2. Operation Detection
+   - DML operations (Create, Update, Delete)
+   - SOQL queries
+   - Cross-object formula references
+   - Record-triggered flow operations
+
+3. Bulkification Analysis
+   - Score calculation based on operation patterns
+   - Specific recommendations for improvement
+   - Loop-based penalty calculations
+   - Subflow operation aggregation
 - Comprehensive flow metadata analysis
 - Detection of SOQL and DML operations
 - Subflow and Apex action analysis
