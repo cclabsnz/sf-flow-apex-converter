@@ -16,7 +16,9 @@
     "README.md",
     "LICENSE"
   ],
-  "bin": "./dist/index.js",
+  "bin": {
+    "sf-flow-apex-converter": "dist/index.js"
+  },
   "keywords": [
     "salesforce",
     "flow",
