@@ -112,7 +112,7 @@ export class SubflowManager {
     return lines.join('\n');
   }
 
-  async analyzeSubflow(subflowName: string, depth: number = 0, xml?: string): Promise<SubflowAnalysis> {
+  async analyzeSubflow(subflowName: string, depth: number = 0, xml?: string, flowName?: string): Promise<SubflowAnalysis> {
     // Try to get local XML if not provided
     if (!xml && this.getFlowXml) {
       xml = this.getFlowXml(subflowName);
@@ -156,7 +156,7 @@ Analyzing flow: ${subflowName}...`); */
     try {
       Logger.debug('SubflowManager', `Fetching metadata for subflow: ${subflowName}`);
       const parsedMetadata = await this.parser.getSubflowMetadata(subflowName, false, xml);
-      const analysis = await this.analyzer.analyzeMetadata(parsedMetadata, depth);
+      const analysis = await this.analyzer.analyzeMetadata(parsedMetadata, depth, flowName || subflowName);
       
       this.subflowCache.set(subflowName, analysis);
       return analysis;

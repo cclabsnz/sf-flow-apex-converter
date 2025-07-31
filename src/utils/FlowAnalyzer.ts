@@ -346,7 +346,7 @@ export class FlowAnalyzer {
                     }
                   }
                   
-                  const subflowAnalysis = await this.subflowManager.analyzeSubflow(subflowName, 0, subflowXml);
+                  const subflowAnalysis = await this.subflowManager.analyzeSubflow(subflowName, 0, subflowXml, element.flowname?.[0]);
                   analysis.subflows.push(subflowAnalysis);
                   // Aggregate metrics from subflow
                   analysis.totalElements += subflowAnalysis.totalElementsWithSubflows;
