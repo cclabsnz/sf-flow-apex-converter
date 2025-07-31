@@ -54,7 +54,7 @@ export class MetadataParser {
   private static async parseXmlMetadata(xmlData: string): Promise<FlowMetadata> {
     try {
       const parsed = await parseStringPromise(xmlData, {
-        explicitArray: true,
+        explicitArray: false,
         normalizeTags: true,
         valueProcessors: [
           (value: string) => {
@@ -71,9 +71,9 @@ export class MetadataParser {
 
       Logger.debug('MetadataParser', 'Successfully parsed XML metadata');
       return parsed.Flow || parsed;
-    } catch (error) {
+    } catch (error: any) {
       Logger.error('MetadataParser', 'Failed to parse XML metadata', error);
-      throw new Error(`Failed to parse XML metadata: ${error.message}`);
+      throw new Error(`Failed to parse XML metadata: ${error.message || error}`);
     }
   }
 
@@ -93,9 +93,9 @@ export class MetadataParser {
 
       // Normalize arrays
       return this.normalizeArrays(metadata);
-    } catch (error) {
+    } catch (error: any) {
       Logger.error('MetadataParser', 'Failed to parse JSON metadata', error);
-      throw new Error(`Failed to parse JSON metadata: ${error.message}`);
+      throw new Error(`Failed to parse JSON metadata: ${error.message || error}`);
     }
   }
 

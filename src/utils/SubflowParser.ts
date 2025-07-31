@@ -1,7 +1,7 @@
 import { Connection } from 'jsforce';
-import { parseStringPromise } from 'xml2js';
 import { Logger } from './Logger.js';
 import { FlowMetadata, FlowElementMetadata, SubflowReference, FlowElements } from './interfaces/SubflowTypes.js';
+import { MetadataParser } from './parsers/MetadataParser.js';
 
 export class SubflowParser {
   private processedFlows = new Set<string>();
@@ -36,35 +36,23 @@ export class SubflowParser {
       lastModified: flow.LastModifiedDate
     });
 
-    // Parse XML with options to handle arrays consistently
-    const metadata = await parseStringPromise(flow.Metadata, {
-      explicitArray: true,
-      normalizeTags: true,
-      valueProcessors: [
-        (value: string) => {
-          // Convert 'true'/'false' strings to booleans
-          if (value.toLowerCase() === 'true') return true;
-          if (value.toLowerCase() === 'false') return false;
-          return value;
-        }
-      ],
-      preserveChildrenOrder: true,
-      mergeAttrs: false,
-      ignoreAttrs: false
-    });
+    // Parse the metadata based on its format
+    try {
+      const metadata = await MetadataParser.parseMetadata(flow.Metadata);
 
-    // Normalize metadata structure
-    const normalizedMetadata = metadata.Flow || metadata;
-    
-    // Add version info
-    return {
-      ...normalizedMetadata,
-      _flowVersion: {
-        version: flow.VersionNumber,
-        status: flow.Status,
-        lastModified: flow.LastModifiedDate
-      }
-    };
+      // Add version info
+      return {
+        ...metadata,
+        _flowVersion: {
+          version: flow.VersionNumber,
+          status: flow.Status,
+          lastModified: flow.LastModifiedDate
+        }
+      };
+    } catch (error: any) {
+      Logger.error('SubflowParser', `Failed to parse metadata for ${subflowName}`, error);
+      throw new Error(`Failed to parse metadata: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   private countElements(metadata: FlowMetadata): FlowElements {
@@ -87,6 +75,7 @@ export class SubflowParser {
         const count = Array.isArray(metadata[type.key]) ? metadata[type.key].length : 1;
         elements[type.key] = count;
         elements.total += count;
+        Logger.debug('SubflowParser', `Found ${count} ${type.name}`);
       }
     }
 
@@ -161,7 +150,7 @@ export class SubflowParser {
     const references: SubflowReference[] = [];
     const loopElements = new Set<string>();
     
-    Logger.debug('SubflowParser', 'Starting subflow extraction', { metadata });
+    Logger.debug('SubflowParser', 'Starting subflow extraction', { depth });
 
     // Don't exceed max depth
     if (depth >= SubflowParser.MAX_DEPTH) {
@@ -187,16 +176,17 @@ export class SubflowParser {
         ...(metadata.flow?.subflows ? (Array.isArray(metadata.flow.subflows) ? metadata.flow.subflows : [metadata.flow.subflows]) : [])
       ];
 
-      Logger.debug('SubflowParser', 'Found potential subflows', { count: potentialSubflows.length });
+      Logger.info('SubflowParser', `Found ${potentialSubflows.length} potential subflows to analyze`);
 
       // Process each potential subflow
       for (const subflow of potentialSubflows) {
         const flowName = subflow.flowName?.[0] || '';
         if (!flowName || this.processedFlows.has(flowName)) {
+          Logger.debug('SubflowParser', `Skipping already processed subflow: ${flowName}`);
           continue;
         }
         
-        Logger.debug('SubflowParser', `Processing subflow: ${flowName}`, { depth });
+        Logger.info('SubflowParser', `Processing subflow: ${flowName} (depth: ${depth})`);
         this.processedFlows.add(flowName);
 
         try {
@@ -252,13 +242,16 @@ export class SubflowParser {
 
           references.push(reference);
           Logger.info('SubflowParser', `Successfully analyzed subflow: ${flowName}`, {
-            elements: subflowElements,
+            elements: subflowElements.total,
             dmlOperations,
             soqlQueries,
             complexity,
-            nestedSubflowCount: nestedSubflows.length
+            nestedSubflowCount: nestedSubflows.length,
+            isInLoop: reference.isInLoop,
+            inputParams: reference.inputAssignments?.length || 0,
+            outputParams: reference.outputAssignments?.length || 0
           });
-        } catch (error) {
+        } catch (error: any) {
           Logger.error('SubflowParser', `Failed to analyze subflow: ${flowName}`, error);
         }
       }
