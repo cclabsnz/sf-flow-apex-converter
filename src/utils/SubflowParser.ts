@@ -1,9 +1,12 @@
 import { Connection } from 'jsforce';
 import { parseStringPromise } from 'xml2js';
 import { Logger } from './Logger.js';
-import { FlowMetadata, FlowElementMetadata, SubflowReference } from './interfaces/SubflowTypes.js';
+import { FlowMetadata, FlowElementMetadata, SubflowReference, FlowElements } from './interfaces/SubflowTypes.js';
 
 export class SubflowParser {
+  private processedFlows = new Set<string>();
+  private static readonly MAX_DEPTH = 10;
+
   constructor(private connection: Connection) {}
 
   async getSubflowMetadata(subflowName: string, requireActive: boolean = true): Promise<FlowMetadata> {
@@ -64,11 +67,107 @@ export class SubflowParser {
     };
   }
 
-  extractSubflowReferences(metadata: FlowMetadata): SubflowReference[] {
+  private countElements(metadata: FlowMetadata): FlowElements {
+    const elements: FlowElements = { total: 0 };
+    
+    const elementTypes = [
+      { key: 'recordLookups', name: 'Record Lookups' },
+      { key: 'recordCreates', name: 'Record Creates' },
+      { key: 'recordUpdates', name: 'Record Updates' },
+      { key: 'recordDeletes', name: 'Record Deletes' },
+      { key: 'decisions', name: 'Decisions' },
+      { key: 'loops', name: 'Loops' },
+      { key: 'assignments', name: 'Assignments' },
+      { key: 'actionCalls', name: 'Apex Actions' },
+      { key: 'subflows', name: 'Subflows' }
+    ];
+
+    for (const type of elementTypes) {
+      if (metadata[type.key]) {
+        const count = Array.isArray(metadata[type.key]) ? metadata[type.key].length : 1;
+        elements[type.key] = count;
+        elements.total += count;
+      }
+    }
+
+    return elements;
+  }
+
+  private countDMLOperations(metadata: FlowMetadata): number {
+    let count = 0;
+    if (metadata.recordCreates) count += Array.isArray(metadata.recordCreates) ? metadata.recordCreates.length : 1;
+    if (metadata.recordUpdates) count += Array.isArray(metadata.recordUpdates) ? metadata.recordUpdates.length : 1;
+    if (metadata.recordDeletes) count += Array.isArray(metadata.recordDeletes) ? metadata.recordDeletes.length : 1;
+    return count;
+  }
+
+  private countSOQLQueries(metadata: FlowMetadata): number {
+    let count = 0;
+    if (metadata.recordLookups) count += Array.isArray(metadata.recordLookups) ? metadata.recordLookups.length : 1;
+    if (metadata.dynamicChoiceSets) count += Array.isArray(metadata.dynamicChoiceSets) ? metadata.dynamicChoiceSets.length : 1;
+    // Count implicit query for record-triggered flows
+    if (metadata.trigger && metadata.trigger[0]?.type?.[0] === 'RecordAfterSave') count++;
+    return count;
+  }
+
+  private calculateComplexity(metadata: FlowMetadata): number {
+    let complexity = 1;
+
+    // Add complexity for decisions
+    if (metadata.decisions) {
+      complexity += (Array.isArray(metadata.decisions) ? metadata.decisions.length : 1) * 2;
+    }
+
+    // Add complexity for loops
+    if (metadata.loops) {
+      complexity += (Array.isArray(metadata.loops) ? metadata.loops.length : 1) * 3;
+    }
+
+    // Add complexity for DML
+    complexity += this.countDMLOperations(metadata) * 2;
+
+    // Add complexity for SOQL
+    complexity += this.countSOQLQueries(metadata) * 2;
+
+    // Add complexity for subflows
+    if (metadata.subflows) {
+      complexity += (Array.isArray(metadata.subflows) ? metadata.subflows.length : 1) * 2;
+    }
+
+    return complexity;
+  }
+
+  private isInLoop(element: FlowElementMetadata, loopElements: Set<string>): boolean {
+    if (!element.processMetadataValues) return false;
+    
+    const processValues = Array.isArray(element.processMetadataValues) 
+      ? element.processMetadataValues 
+      : [element.processMetadataValues];
+
+    for (const value of processValues) {
+      if (value.name?.[0] === 'BuilderContext' && value.value?.[0]) {
+        try {
+          const context = JSON.parse(value.value[0]);
+          return loopElements.has(context.containerId);
+        } catch (e) {
+          return false;
+        }
+      }
+    }
+    return false;
+  }
+
+  async extractSubflowReferences(metadata: FlowMetadata, depth: number = 0): Promise<SubflowReference[]> {
     const references: SubflowReference[] = [];
     const loopElements = new Set<string>();
     
     Logger.debug('SubflowParser', 'Starting subflow extraction', { metadata });
+
+    // Don't exceed max depth
+    if (depth >= SubflowParser.MAX_DEPTH) {
+      Logger.warn('SubflowParser', `Maximum recursion depth ${SubflowParser.MAX_DEPTH} reached`);
+      return references;
+    }
 
     // First, identify all loop elements
     if (metadata.loops) {
@@ -77,27 +176,6 @@ export class SubflowParser {
         if (loop.name) loopElements.add(loop.name[0]);
       });
     }
-
-    // Helper to check if an element is in a loop
-    const isInLoop = (element: FlowElementMetadata): boolean => {
-      if (!element.processMetadataValues) return false;
-      
-      const processValues = Array.isArray(element.processMetadataValues) 
-        ? element.processMetadataValues 
-        : [element.processMetadataValues];
-
-      for (const value of processValues) {
-        if (value.name?.[0] === 'BuilderContext' && value.value?.[0]) {
-          try {
-            const context = JSON.parse(value.value[0]);
-            return loopElements.has(context.containerId);
-          } catch (e) {
-            return false;
-          }
-        }
-      }
-      return false;
-    };
 
     // Process direct subflow references and all possible subflow locations
     if (metadata.subflows || metadata.steps || metadata.nodes || metadata.flow) {
@@ -110,94 +188,80 @@ export class SubflowParser {
       ];
 
       Logger.debug('SubflowParser', 'Found potential subflows', { count: potentialSubflows.length });
-      const subflows = Array.isArray(metadata.subflows) ? metadata.subflows : [metadata.subflows];
-      Logger.debug('SubflowParser', 'Processing direct subflows', { subflowsCount: subflows.length, subflows });
-      subflows.forEach((subflow: FlowElementMetadata) => {
-        const reference: SubflowReference = {
-          name: subflow.flowName?.[0] || '',
-          isInLoop: isInLoop(subflow),
-          parentElement: subflow.name?.[0]
-        };
 
-        // Extract input assignments
-        if (subflow.inputAssignments) {
-          const inputs = Array.isArray(subflow.inputAssignments) 
-            ? subflow.inputAssignments 
-            : [subflow.inputAssignments];
-          
-          reference.inputAssignments = inputs.map((input: FlowElementMetadata) => ({
-            name: input.name?.[0] || '',
-            value: input.value?.[0] || '',
-            dataType: input.dataType?.[0] || 'String'
-          }));
+      // Process each potential subflow
+      for (const subflow of potentialSubflows) {
+        const flowName = subflow.flowName?.[0] || '';
+        if (!flowName || this.processedFlows.has(flowName)) {
+          continue;
         }
+        
+        Logger.debug('SubflowParser', `Processing subflow: ${flowName}`, { depth });
+        this.processedFlows.add(flowName);
 
-        // Extract output assignments
-        if (subflow.outputAssignments) {
-          const outputs = Array.isArray(subflow.outputAssignments) 
-            ? subflow.outputAssignments 
-            : [subflow.outputAssignments];
+        try {
+          // Fetch and analyze the referenced subflow
+          const subflowMetadata = await this.getSubflowMetadata(flowName);
+          const subflowElements = this.countElements(subflowMetadata);
+          const dmlOperations = this.countDMLOperations(subflowMetadata);
+          const soqlQueries = this.countSOQLQueries(subflowMetadata);
+          const complexity = this.calculateComplexity(subflowMetadata);
           
-          reference.outputAssignments = outputs.map((output: FlowElementMetadata) => ({
-            name: output.name?.[0] || '',
-            value: output.value?.[0] || '',
-            dataType: output.dataType?.[0] || 'String'
-          }));
-        }
-
-        references.push(reference);
-      });
-    }
-
-    // Process subflows in loops
-    if (metadata.loops) {
-      const loops = Array.isArray(metadata.loops) ? metadata.loops : [metadata.loops];
-      loops.forEach((loop: FlowElementMetadata) => {
-        if (loop.elements) {
-          const elements = Array.isArray(loop.elements) ? loop.elements : [loop.elements];
-          elements.forEach((element: FlowElementMetadata) => {
-            if (element.subflow || element.type?.[0] === 'Subflow' || 
-                (element.type && !Array.isArray(element.type) && element.type === 'Subflow') || 
-                (element.type && Array.isArray(element.type) && element.type.includes('Subflow'))) {
-              
-              const reference: SubflowReference = {
-                name: element.subflow?.[0]?.flowName?.[0] || 
-                      element.flowName?.[0] || 
-                      element.subflow?.flowName?.[0] || 
-                      (element.subflow && typeof element.subflow === 'string' ? element.subflow : ''),
-                isInLoop: true,
-                parentElement: loop.name?.[0]
-              };
-
-              if (element.inputAssignments) {
-                const inputs = Array.isArray(element.inputAssignments) 
-                  ? element.inputAssignments 
-                  : [element.inputAssignments];
-                
-                reference.inputAssignments = inputs.map((input: FlowElementMetadata) => ({
-                  name: input.name?.[0] || '',
-                  value: input.value?.[0] || '',
-                  dataType: input.dataType?.[0] || 'String'
-                }));
-              }
-
-              if (element.outputAssignments) {
-                const outputs = Array.isArray(element.outputAssignments) 
-                  ? element.outputAssignments 
-                  : [element.outputAssignments];
-                
-                reference.outputAssignments = outputs.map((output: FlowElementMetadata) => ({
-                  name: output.name?.[0] || '',
-                  value: output.value?.[0] || '',
-                  dataType: output.dataType?.[0] || 'String'
-                }));
-              }
-
-              references.push(reference);
+          // Get nested subflows recursively
+          const nestedSubflows = await this.extractSubflowReferences(subflowMetadata, depth + 1);
+          
+          const reference: SubflowReference = {
+            name: flowName,
+            isInLoop: this.isInLoop(subflow, loopElements),
+            parentElement: subflow.name?.[0],
+            metadata: subflowMetadata,
+            analysis: {
+              elements: subflowElements,
+              dmlOperations,
+              soqlQueries,
+              complexity,
+              nestedSubflows
             }
+          };
+
+          // Extract input assignments
+          if (subflow.inputAssignments) {
+            const inputs = Array.isArray(subflow.inputAssignments) 
+              ? subflow.inputAssignments 
+              : [subflow.inputAssignments];
+            
+            reference.inputAssignments = inputs.map((input: FlowElementMetadata) => ({
+              name: input.name?.[0] || '',
+              value: input.value?.[0] || '',
+              dataType: input.dataType?.[0] || 'String'
+            }));
+          }
+
+          // Extract output assignments
+          if (subflow.outputAssignments) {
+            const outputs = Array.isArray(subflow.outputAssignments) 
+              ? subflow.outputAssignments 
+              : [subflow.outputAssignments];
+            
+            reference.outputAssignments = outputs.map((output: FlowElementMetadata) => ({
+              name: output.name?.[0] || '',
+              value: output.value?.[0] || '',
+              dataType: output.dataType?.[0] || 'String'
+            }));
+          }
+
+          references.push(reference);
+          Logger.info('SubflowParser', `Successfully analyzed subflow: ${flowName}`, {
+            elements: subflowElements,
+            dmlOperations,
+            soqlQueries,
+            complexity,
+            nestedSubflowCount: nestedSubflows.length
           });
+        } catch (error) {
+          Logger.error('SubflowParser', `Failed to analyze subflow: ${flowName}`, error);
         }
-      });
+      }
     }
 
     return references;
