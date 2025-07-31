@@ -44,7 +44,10 @@ export class SubflowParser {
           if (value.toLowerCase() === 'false') return false;
           return value;
         }
-      ]
+      ],
+      preserveChildrenOrder: true,
+      mergeAttrs: false,
+      ignoreAttrs: false
     });
 
     // Normalize metadata structure
@@ -64,6 +67,8 @@ export class SubflowParser {
   extractSubflowReferences(metadata: FlowMetadata): SubflowReference[] {
     const references: SubflowReference[] = [];
     const loopElements = new Set<string>();
+    
+    Logger.debug('SubflowParser', 'Starting subflow extraction', { metadata });
 
     // First, identify all loop elements
     if (metadata.loops) {
@@ -94,9 +99,19 @@ export class SubflowParser {
       return false;
     };
 
-    // Process direct subflow references
-    if (metadata.subflows) {
+    // Process direct subflow references and all possible subflow locations
+    if (metadata.subflows || metadata.steps || metadata.nodes || metadata.flow) {
+      // Try different possible locations where subflows might be defined
+      const potentialSubflows = [
+        ...(metadata.subflows ? (Array.isArray(metadata.subflows) ? metadata.subflows : [metadata.subflows]) : []),
+        ...(metadata.steps?.filter((step: any) => step.type?.[0] === 'Subflow') || []),
+        ...(metadata.nodes?.filter((node: any) => node.type?.[0] === 'Subflow') || []),
+        ...(metadata.flow?.subflows ? (Array.isArray(metadata.flow.subflows) ? metadata.flow.subflows : [metadata.flow.subflows]) : [])
+      ];
+
+      Logger.debug('SubflowParser', 'Found potential subflows', { count: potentialSubflows.length });
       const subflows = Array.isArray(metadata.subflows) ? metadata.subflows : [metadata.subflows];
+      Logger.debug('SubflowParser', 'Processing direct subflows', { subflowsCount: subflows.length, subflows });
       subflows.forEach((subflow: FlowElementMetadata) => {
         const reference: SubflowReference = {
           name: subflow.flowName?.[0] || '',
