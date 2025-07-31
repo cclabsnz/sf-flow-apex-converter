@@ -1,5 +1,6 @@
-import { SecurityContext } from './SecurityTypes.js';
-import { FlowElement, LoopMetrics, LoopContext } from './FlowTypes.js';
+import { FlowElement } from '../elements/FlowElement.js';
+import { SecurityContext } from '../security/SecurityContext.js';
+import { LoopMetrics, LoopContext } from '../loops/LoopAnalysis.js';
 
 export interface FlowAnalysisBase {
   flowName: string;

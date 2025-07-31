@@ -35,35 +35,3 @@ export interface FlowCondition {
     booleanValue?: boolean;
   };
 }
-
-export type FlowMetricsMap = Map<string, FlowElement>;
-
-export interface ElementCondition extends FlowCondition {}
-
-export interface ElementRef extends FlowConnector {}
-
-export interface LoopMetrics {
-  totalLoops: number;
-  itemsProcessed: string[];
-  containsDML: boolean;
-  containsSOQL: boolean;
-  containsSubflows: boolean;
-  nestedElements: {
-    dml: number;
-    soql: number;
-    subflows: number;
-    other: number;
-  };
-  loopVariables: {
-    inputCollection: string;
-    currentItem: string;
-    iterationOrder: 'Asc' | 'Desc';
-  };
-}
-
-export interface LoopContext {
-  isInLoop: boolean;
-  loopReferenceName?: string;
-  parentLoopNames?: string[];
-  depth: number;
-}

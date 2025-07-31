@@ -45,10 +45,11 @@ export class BulkPatternGenerator {
 
   private analyzeOperations(analysis: ComprehensiveFlowAnalysis): void {
     // Group similar operations for bulkification
-    analysis.elements.forEach(element => {
-      switch (element.type) {
+    (analysis.elements as FlowMetricsMap).forEach((element: unknown) => {
+      const flowElement = element as FlowElement;
+      switch (flowElement.type) {
         case FlowElementType.RECORD_LOOKUP:
-          this.analyzeQueryOperation(element);
+          this.analyzeQueryOperation(flowElement);
           break;
         case FlowElementType.RECORD_CREATE:
         case FlowElementType.RECORD_UPDATE:

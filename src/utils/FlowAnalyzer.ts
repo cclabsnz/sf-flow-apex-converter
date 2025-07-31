@@ -435,27 +435,56 @@ export class FlowAnalyzer {
 
   private calculateMetrics(analysis: ComprehensiveFlowAnalysis): void {
     let score = 100;
+    let bulkificationReason = '';
     
     // Penalize for DML operations
-    score -= Math.max(0, analysis.dmlOperations - 1) * 10;
+    const dmlPenalty = Math.max(0, analysis.dmlOperations - 1) * 10;
+    if (dmlPenalty > 0) {
+      score -= dmlPenalty;
+      bulkificationReason += `Multiple DML operations (${analysis.dmlOperations}) should be bulkified. `;
+    }
     
     // Penalize for SOQL queries
-    score -= Math.max(0, analysis.soqlQueries - 1) * 5;
+    const soqlPenalty = Math.max(0, analysis.soqlQueries - 1) * 5;
+    if (soqlPenalty > 0) {
+      score -= soqlPenalty;
+      bulkificationReason += `Multiple SOQL queries (${analysis.soqlQueries}) should be consolidated. `;
+    }
     
     // Check for operations in loops
-    analysis.elements.forEach(element => {
-      if (element.type === FlowElementType.LOOP) {
-        const hasNestedDML = this.hasNestedOperation(element, analysis, 
-          [FlowElementType.RECORD_CREATE, FlowElementType.RECORD_UPDATE, FlowElementType.RECORD_DELETE]);
-        const hasNestedSOQL = this.hasNestedOperation(element, analysis, 
-          [FlowElementType.RECORD_LOOKUP]);
-        
-        if (hasNestedDML) score -= 30;
-        if (hasNestedSOQL) score -= 20;
+    analysis.loops.forEach(loop => {
+      // DML in loops
+      if (loop.containsDML) {
+        score -= 30;
+        bulkificationReason += `DML operations found inside loop processing ${loop.loopVariables.inputCollection}. `;
+      }
+      
+      // SOQL in loops
+      if (loop.containsSOQL) {
+        score -= 20;
+        bulkificationReason += `SOQL queries found inside loop processing ${loop.loopVariables.inputCollection}. `;
+      }
+      
+      // Subflows in loops
+      if (loop.containsSubflows) {
+        score -= 15;
+        bulkificationReason += `Subflow calls found inside loop processing ${loop.loopVariables.inputCollection}. `;
+      }
+      
+      // Nested elements count
+      const totalNested = loop.nestedElements.dml + loop.nestedElements.soql + 
+                         loop.nestedElements.subflows + loop.nestedElements.other;
+      if (totalNested > 5) {
+        score -= Math.min(20, (totalNested - 5) * 2);
+        bulkificationReason += `High number of operations (${totalNested}) inside loop. `;
       }
     });
     
     analysis.bulkificationScore = Math.max(0, score);
+    analysis.shouldBulkify = score < 80;
+    if (analysis.shouldBulkify) {
+      analysis.bulkificationReason = bulkificationReason.trim();
+    }
   }
 
   private hasNestedOperation(
