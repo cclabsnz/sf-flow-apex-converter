@@ -1,3 +1,16 @@
+import { OperationSummary } from './FlowAnalysisTypes.js';
+
+export interface FlowVersion {
+  version: string;
+  status: string;
+  lastModified: string;
+}
+
+export interface DataFlow {
+  inputs: Map<string, string>;
+  outputs: Map<string, string>;
+}
+
 export interface FlowElements {
   recordLookups?: number;
   recordCreates?: number;
@@ -10,17 +23,6 @@ export interface FlowElements {
   actionCalls?: number;
   total: number;
   [key: string]: number | undefined;
-}
-
-export interface FlowVersion {
-  version: string;  // Use version instead of number to match FlowMetadata._flowVersion
-  status: string;
-  lastModified: string;
-}
-
-export interface DataFlow {
-  inputs: Map<string, string>;
-  outputs: Map<string, string>;
 }
 
 export interface SubflowReference {
@@ -62,71 +64,51 @@ export interface ApexRecommendation {
   suggestedClasses: string[];
 }
 
-export interface SubflowAnalysis {
-  flowName: string;
-  shouldBulkify: boolean;
-  bulkificationReason: string;
-  complexity: number;
-  cumulativeComplexity: number;
-  dmlOperations: number;
-  cumulativeDmlOperations: number;
-  soqlQueries: number;
-  cumulativeSoqlQueries: number;
-  parameters: Map<string, any>;
-  version: FlowVersion;
-  soqlSources: string[];
-  elements: FlowElements;
-  subflows: SubflowDetails[];
-  totalElementsWithSubflows: number;
-  apexRecommendation: ApexRecommendation;
-}
-
 export interface FlowElementMetadata {
   name?: string[];
   type?: string[];
   flowName?: string[];
   value?: string[];
   dataType?: string[];
-  processMetadataValues?: any[];
-  inputAssignments?: any[];
-  outputAssignments?: any[];
+  processMetadataValues?: Array<Record<string, unknown>>;
+  inputAssignments?: Array<Record<string, unknown>>;
+  outputAssignments?: Array<Record<string, unknown>>;
   expression?: string[];
-  elements?: any[];
-  subflow?: any;  // Can be array, string, or object
+  elements?: Array<Record<string, unknown>>;
+  subflow?: Record<string, unknown> | string[] | string;
+}
+
+export interface FlowBaseType {
+  type?: string[];
+  name?: string[];
+  flowName?: string[];
+  object?: string[];
+  [key: string]: unknown;
 }
 
 export interface FlowMetadata {
-  [key: string]: any;  // Add index signature
+  [key: string]: unknown;
   name?: string[];
   flow?: {
-    subflows?: any[];
-    [key: string]: any;
+    subflows?: FlowBaseType[];
+    [key: string]: unknown;
   };
-  steps?: Array<{
-    type?: string[];
-    name?: string[];
-    flowName?: string[];
-    [key: string]: any;
-  }>;
-  nodes?: Array<{
-    type?: string[];
-    name?: string[];
-    flowName?: string[];
-    [key: string]: any;
-  }>;
-  recordCreates?: any[];
-  recordUpdates?: any[];
-  recordDeletes?: any[];
-  recordLookups?: any[];
-  decisions?: any[];
-  loops?: any[];
-  assignments?: any[];
-  subflows?: any[];
-  actionCalls?: any[];
-  dynamicChoiceSets?: any[];
-  formulas?: any[];
-  variables?: any[];
-  trigger?: any[];
-  processMetadataValues?: any[];
+  steps?: FlowBaseType[];
+  nodes?: FlowBaseType[];
+  recordCreates?: FlowBaseType[];
+  recordUpdates?: FlowBaseType[];
+  recordDeletes?: FlowBaseType[];
+  recordLookups?: FlowBaseType[];
+  decisions?: FlowBaseType[];
+  loops?: FlowBaseType[];
+  assignments?: FlowBaseType[];
+  subflows?: FlowBaseType[];
+  actionCalls?: FlowBaseType[];
+  dynamicChoiceSets?: FlowBaseType[];
+  formulas?: FlowBaseType[];
+  variables?: FlowBaseType[];
+  trigger?: FlowBaseType[];
+  processMetadataValues?: FlowBaseType[];
   _flowVersion: FlowVersion;
+  runInMode?: string[];
 }

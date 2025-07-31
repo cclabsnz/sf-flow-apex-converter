@@ -8,71 +8,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-export enum FlowElementType {
-  RECORD_CREATE = 'recordCreates',
-  RECORD_UPDATE = 'recordUpdates',
-  RECORD_DELETE = 'recordDeletes',
-  RECORD_LOOKUP = 'recordLookups',
-  RECORD_ROLLBACK = 'recordRollbacks',
-  ASSIGNMENT = 'assignments',
-  DECISION = 'decisions',
-  LOOP = 'loops',
-  SUBFLOW = 'subflows',
-  SCREEN = 'screens'
-}
-
-export interface FlowElement {
-  type: FlowElementType;
-  name: string;
-  properties: Record<string, any>;
-  connectors: FlowConnector[];
-}
-
-export interface FlowConnector {
-  targetReference: string;
-  conditionLogic?: string;
-  conditions?: FlowCondition[];
-}
-
-export interface FlowCondition {
-  leftValueReference: string;
-  operator: string;
-  rightValue?: {
-    stringValue?: string;
-    numberValue?: number;
-    booleanValue?: boolean;
-  };
-}
-
-export interface SecurityContext {
-  isSystemMode: boolean;
-  enforceObjectPermissions: boolean;
-  enforceFieldPermissions: boolean;
-  enforceSharingRules: boolean;
-  requiredPermissions: Set<string>;
-  requiredObjects: Set<string>;
-  requiredFields: Map<string, Set<string>>;
-}
-
-import { SubflowAnalysis } from './interfaces/SubflowTypes.js';
-
-export interface ComprehensiveFlowAnalysis {
-  flowName: string;
-  processType: string;
-  totalElements: number;
-  dmlOperations: number;
-  soqlQueries: number;
-  bulkificationScore: number;
-  elements: Map<string, FlowElement>;
-  objectDependencies: Set<string>;
-  recommendations: string[];
-  securityContext: SecurityContext;
-  apiVersion: string;
-  subflows: SubflowAnalysis[];
-}
+import { FlowElementType, FlowElement, FlowConnector, FlowCondition } from './interfaces/FlowTypes.js';
+import { SecurityContext } from './interfaces/SecurityTypes.js';
+import { ComprehensiveFlowAnalysis, SubflowAnalysis } from './interfaces/FlowAnalysisTypes.js';
 
 export class FlowAnalyzer {
-  private analyzeSecurityContext(metadata: any): SecurityContext {
+  private analyzeSecurityContext(metadata: Record<string, unknown>): SecurityContext {
     const securityContext: SecurityContext = {
       isSystemMode: metadata.runInMode?.[0] === 'SYSTEM' || false,
       enforceObjectPermissions: metadata.runInMode?.[0] === 'USER' || false,
@@ -255,13 +196,43 @@ export class FlowAnalyzer {
       Logger.info('FlowAnalyzer', 'Generating recommendations');
       this.generateRecommendations(analysis);
 
-      Logger.info('FlowAnalyzer', 'Analysis complete', {
-        flowName: analysis.flowName,
-        totalElements: analysis.totalElements,
-        dmlOperations: analysis.dmlOperations,
-        soqlQueries: analysis.soqlQueries,
-        bulkificationScore: analysis.bulkificationScore
-      });
+      // Prepare operation summary
+      const summary = {
+        flow: {
+          name: analysis.flowName,
+          type: analysis.processType,
+          totalElements: analysis.totalElements,
+          bulkificationScore: analysis.bulkificationScore,
+          apiVersion: analysis.apiVersion
+        },
+        operations: {
+          dml: {
+            total: analysis.operationSummary.totalOperations.dml.total,
+            inLoop: analysis.operationSummary.totalOperations.dml.inLoop,
+            sources: analysis.operationSummary.dmlOperations.map(op => ({
+              flow: op.sourceFlow,
+              count: op.count,
+              inLoop: op.inLoop,
+              locations: op.sources
+            }))
+          },
+          soql: {
+            total: analysis.operationSummary.totalOperations.soql.total,
+            inLoop: analysis.operationSummary.totalOperations.soql.inLoop,
+            sources: analysis.operationSummary.soqlQueries.map(op => ({
+              flow: op.sourceFlow,
+              count: op.count,
+              inLoop: op.inLoop,
+              locations: op.sources
+            }))
+          }
+        },
+        bulkificationNeeded: analysis.shouldBulkify,
+        reason: analysis.bulkificationReason,
+        recommendations: analysis.recommendations
+      };
+
+      Logger.info('FlowAnalyzer', 'Analysis complete', summary);
     } catch (error) {
       Logger.error('FlowAnalyzer', 'Error during flow analysis', error);
       throw error;
@@ -270,9 +241,44 @@ export class FlowAnalyzer {
     return analysis;
   }
 
+  private buildLoopContext(metadata: any): Map<string, string> {
+    const loopContext = new Map<string, string>();
+    
+    // Check for loops and collect their target references
+    if (metadata.loops) {
+      const loops = Array.isArray(metadata.loops) ? metadata.loops : [metadata.loops];
+      for (const loop of loops) {
+        if (loop.name && loop.connector) {
+          const connectors = Array.isArray(loop.connector) ? loop.connector : [loop.connector];
+          for (const connector of connectors) {
+            if (connector.targetreference) {
+              const target = connector.targetreference[0];
+              loopContext.set(target, loop.name[0]);
+            }
+          }
+        }
+      }
+    }
+
+    return loopContext;
+  }
+
+  private isElementInLoop(elementName: string, loopContext: Map<string, string>, visitedElements: Set<string> = new Set()): string | undefined {
+    // Prevent infinite recursion
+    if (visitedElements.has(elementName)) return undefined;
+    visitedElements.add(elementName);
+
+    // Check if element is directly in a loop
+    return loopContext.get(elementName);
+  }
+
   private async parseAllElements(metadata: any, analysis: ComprehensiveFlowAnalysis): Promise<void> {
     Logger.debug('FlowAnalyzer', 'Starting element parsing');
     Logger.debug('FlowAnalyzer', `Metadata keys: ${Object.keys(metadata)}`);
+    
+    // Build loop context
+    const loopContext = this.buildLoopContext(metadata);
+    Logger.debug('FlowAnalyzer', `Found loops: ${Array.from(loopContext.entries()).map(([target, loop]) => `${loop} -> ${target}`).join(', ')}`);
     
     // Map of flow types to their possible XML tag names
     const typeToTags = {
@@ -317,11 +323,16 @@ export class FlowAnalyzer {
           }
 
           for (const element of elements) {
+            const elementName = element.name?.[0] || 'Unnamed';
+            const elementLoopContext = this.isElementInLoop(elementName, loopContext);
+            
             const flowElement: FlowElement = {
               type: elementType as FlowElementType,
-              name: element.name?.[0] || 'Unnamed',
+              name: elementName,
               properties: this.parseProperties(element),
-              connectors: this.parseConnectors(element)
+              connectors: this.parseConnectors(element),
+              isInLoop: !!elementLoopContext,
+              loopContext: elementLoopContext
             };
             
             analysis.elements.set(flowElement.name, flowElement);
@@ -346,12 +357,31 @@ export class FlowAnalyzer {
                     }
                   }
                   
-                  const subflowAnalysis = await this.subflowManager.analyzeSubflow(subflowName, 0, subflowXml, element.flowname?.[0]);
+                  const subflowAnalysis = await this.subflowManager.analyzeSubflow(
+                  subflowName, 
+                  0, 
+                  subflowXml, 
+                  element.flowname?.[0],
+                  elementLoopContext ? {
+                    isInLoop: true,
+                    loopContext: elementLoopContext
+                  } : undefined
+                );
                   analysis.subflows.push(subflowAnalysis);
+                  
                   // Aggregate metrics from subflow
                   analysis.totalElements += subflowAnalysis.totalElementsWithSubflows;
                   analysis.dmlOperations += subflowAnalysis.cumulativeDmlOperations;
                   analysis.soqlQueries += subflowAnalysis.cumulativeSoqlQueries;
+                  
+                  // Update operation totals
+                  const subflowOps = subflowAnalysis.operationSummary.totalOperations;
+                  const mainOps = analysis.operationSummary.totalOperations;
+                  
+                  mainOps.dml.total += subflowOps.dml.total;
+                  mainOps.dml.inLoop += subflowOps.dml.inLoop;
+                  mainOps.soql.total += subflowOps.soql.total;
+                  mainOps.soql.inLoop += subflowOps.soql.inLoop;
                 } catch (error) {
                   Logger.warn('FlowAnalyzer', `Could not analyze subflow ${subflowName}: ${(error as Error).message}`);
                 }
@@ -363,8 +393,8 @@ export class FlowAnalyzer {
     }
   }
 
-  private parseProperties(element: any): Record<string, any> {
-    const properties: Record<string, any> = {};
+  private parseProperties(element: Record<string, unknown>): Record<string, unknown> {
+    const properties: Record<string, unknown> = {};
     Object.keys(element).forEach(key => {
       if (key !== 'name' && key !== 'connector' && element[key]) {
         properties[key] = Array.isArray(element[key]) ? element[key][0] : element[key];
@@ -373,7 +403,7 @@ export class FlowAnalyzer {
     return properties;
   }
 
-  private parseConnectors(element: any): FlowConnector[] {
+  private parseConnectors(element: Record<string, unknown>): ElementRef[] {
     if (!element.connector) return [];
     
     const connectors = Array.isArray(element.connector) 

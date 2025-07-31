@@ -1,11 +1,13 @@
 import { Logger } from './Logger.js';
-import { SecurityContext, ComprehensiveFlowAnalysis } from './FlowAnalyzer.js';
+import { Connection } from 'jsforce';
 import { TestClassGenerator } from './TestClassGenerator.js';
 import { DeploymentManager, DeploymentResult } from './DeploymentManager.js';
 import { OrgValidator } from './OrgValidator.js';
 import { BulkPatternGenerator } from './BulkPatternGenerator.js';
 import { FlowBulkificationException } from './FlowBulkificationException.js';
-import { Connection } from 'jsforce';
+import { SecurityContext } from './interfaces/SecurityTypes.js';
+import { ComprehensiveFlowAnalysis } from './interfaces/FlowAnalysisTypes.js';
+import { ApexClass, BulkifiedMethod, FlowInputType, ApexSecurityConfig, GeneratedApex } from './interfaces/ApexTypes.js';
 
 export class ApexGenerator {
   private static testGenerator: TestClassGenerator = new TestClassGenerator();
