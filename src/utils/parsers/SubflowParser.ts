@@ -7,9 +7,36 @@ export class SubflowParser {
   private processedFlows = new Set<string>();
   private static readonly MAX_DEPTH = 10;
 
-  constructor(private connection: Connection) {}
+  constructor(private connection: Connection | null) {}
 
-  async getSubflowMetadata(subflowName: string, requireActive: boolean = true): Promise<FlowMetadata> {
+  async getSubflowMetadata(subflowName: string, requireActive: boolean = true, xmlContent?: string): Promise<FlowMetadata> {
+    if (xmlContent) {
+      // If metadata is provided directly, parse and return it
+      Logger.debug('SubflowParser', `Parsing provided metadata for flow: ${subflowName}`);
+      const parsedMetadata = await MetadataParser.parseMetadata(xmlContent);
+      return {
+        ...parsedMetadata as object,
+        _flowVersion: {
+          version: '1',
+          status: 'Active',
+          lastModified: new Date().toISOString()
+        }
+      } as FlowMetadata;
+    }
+
+    // When doing local file analysis and no XML provided, return empty metadata
+    if (!this.connection) {
+      Logger.debug('SubflowParser', `No connection and no XML for subflow: ${subflowName}, returning empty metadata`);
+      return {
+        apiVersion: ['1.0'],
+        _flowVersion: {
+          version: '1',
+          status: 'Unknown',
+          lastModified: new Date().toISOString()
+        }
+      } as FlowMetadata;
+    }
+
     const query = `
       SELECT Id, Metadata, VersionNumber, Status, LastModifiedDate 
       FROM Flow 
@@ -37,17 +64,17 @@ export class SubflowParser {
     });
 
     // Parse the metadata based on its format
-    const metadata = await MetadataParser.parseMetadata(flow.Metadata);
+    const parsedMetadata = await MetadataParser.parseMetadata(flow.Metadata);
 
     // Add version info
     return {
-      ...metadata,
+      ...parsedMetadata as object,
       _flowVersion: {
         version: flow.VersionNumber,
         status: flow.Status,
         lastModified: flow.LastModifiedDate
       }
-    };
+    } as FlowMetadata;
   }
 
   private countElements(metadata: FlowMetadata): FlowElements {

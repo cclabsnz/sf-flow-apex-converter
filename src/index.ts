@@ -91,33 +91,52 @@ Note: When specifying a flow from your org, use the Flow API Name (DeveloperName
 
   try {
     Logger.info('CLI', 'Starting flow analysis');
-    // Check if input is a file path
-    if (input.endsWith('.flow-meta.xml')) {
-      const filePath = path.resolve(input);
-      if (!fs.existsSync(filePath)) {
-        throw new Error(`Flow file not found: ${filePath}`);
-      }
-      flowContent = fs.readFileSync(filePath, 'utf8');
-      let parsed;
-      try {
-        parsed = await MetadataParser.parseMetadata(flowContent);
-        if (!parsed) {
-          throw new Error('Invalid Flow metadata');
+    
+    // Function to look up flow XML by name
+    const getFlowXml = (flowName: string): string | undefined => {
+      const possiblePaths = [
+        path.join(path.dirname(path.resolve(input)), `${flowName}.flow-meta.xml`),
+        path.join(path.dirname(path.resolve(input)), `${flowName}.flow`),
+        path.join(process.cwd(), `force-app/main/default/flows/${flowName}.flow-meta.xml`),
+        path.join(process.cwd(), `force-app/main/default/flows/${flowName}.flow`)
+      ];
+      
+      for (const p of possiblePaths) {
+        if (fs.existsSync(p)) {
+          return fs.readFileSync(p, 'utf8');
         }
-      } catch (parseError) {
-        throw new Error(`Failed to parse Flow metadata: ${(parseError as Error).message}`);
       }
-      flowMetadata = {
-        records: [{
-          Metadata: parsed.Flow,
-          definition: {
-            DeveloperName: path.basename(filePath, '.flow-meta.xml'),
-            ProcessType: parsed.Flow?.processType?.[0] || 'Flow'
-          }
-        }]
+      return undefined;
+    };
+
+    // Check if input is a file path
+    const isLocalFile = fs.existsSync(input);
+
+    if (isLocalFile) {
+      const filePath = path.resolve(input);
+      flowContent = fs.readFileSync(filePath, 'utf8');
+      const flowName = path.basename(filePath, path.extname(filePath));
+      
+      // Initialize managers with XML lookup for local files
+      const conn = new Connection({});
+      const schemaManager = new SchemaManager(conn);
+      const subflowManager = new SubflowManager(conn, schemaManager, getFlowXml);
+      const flowAnalyzer = new FlowAnalyzer(conn, schemaManager, subflowManager, getFlowXml);
+      
+      const parsedMetadata = await MetadataParser.parseMetadata(flowContent);
+      const wrappedMetadata = {
+        Metadata: parsedMetadata.flow || parsedMetadata,
+        definition: {
+          DeveloperName: flowName,
+          ProcessType: (parsedMetadata.flow || parsedMetadata)?.processType?.[0] || 'Flow'
+        }
       };
+      
+      const analysis = await flowAnalyzer.analyzeFlowComprehensive(wrappedMetadata);
+      console.log(JSON.stringify(analysis, null, 2));
+      process.exit(0);
     } else {
-      // Initialize connection and managers
+      // Initialize managers without XML lookup for org-based flows
       const conn = new Connection({});
       const schemaManager = new SchemaManager(conn);
       const subflowManager = new SubflowManager(conn, schemaManager);
@@ -144,45 +163,40 @@ Note: When specifying a flow from your org, use the Flow API Name (DeveloperName
         if (flowMetadata.records.length === 0) {
           throw new Error(`Flow ${input} not found or not active`);
         }
+
+        const analysis = await flowAnalyzer.analyzeFlowComprehensive(flowMetadata.records[0]);
+        
+        // Generate and optionally deploy Apex
+        const apexClass = ApexGenerator.generateApex(analysis);
+        console.log('\nGenerated Apex Class:');
+        console.log('===================\n');
+        console.log(apexClass);
+
+        if (args.includes('--deploy') || args.includes('--test-only')) {
+          console.log('\nDeploying Apex Class...');
+          const result = await ApexGenerator.deployApex(
+            analysis,
+            args.includes('--test-only'),
+            args.includes('--target-org') ? args[args.indexOf('--target-org') + 1] : undefined,
+            conn
+          );
+
+          if (result.success) {
+            console.log('Deployment successful!');
+          } else {
+            console.error('Deployment failed:');
+            result.errors.forEach(error => console.error(error));
+            process.exit(1);
+          }
+        }
+
+        if (args.includes('--verbose')) {
+          console.log('\nFlow Analysis:');
+          console.log('==============\n');
+          console.log(JSON.stringify(analysis, null, 2));
+        }
       }
     }
-
-    const conn = new Connection({});
-    const schemaManager = new SchemaManager(conn);
-    const subflowManager = new SubflowManager(conn, schemaManager);
-    const flowAnalyzer = new FlowAnalyzer(conn, schemaManager, subflowManager);
-    const analysis = await flowAnalyzer.analyzeFlowComprehensive(flowMetadata.records[0]);
-    
-    // Generate and optionally deploy Apex
-    const apexClass = ApexGenerator.generateApex(analysis);
-    console.log('\nGenerated Apex Class:');
-    console.log('===================\n');
-    console.log(apexClass);
-
-    if (args.includes('--deploy') || args.includes('--test-only')) {
-      console.log('\nDeploying Apex Class...');
-      const result = await ApexGenerator.deployApex(
-        analysis,
-        args.includes('--test-only'),
-        args.includes('--target-org') ? args[args.indexOf('--target-org') + 1] : undefined,
-        conn
-      );
-
-      if (result.success) {
-        console.log('Deployment successful!');
-      } else {
-        console.error('Deployment failed:');
-        result.errors.forEach(error => console.error(error));
-        process.exit(1);
-      }
-    }
-
-    if (args.includes('--verbose')) {
-      console.log('\nFlow Analysis:');
-      console.log('==============\n');
-      console.log(JSON.stringify(analysis, null, 2));
-    }
-
   } catch (error) {
     const err = error as Error;
     console.error('Error:', err.message);

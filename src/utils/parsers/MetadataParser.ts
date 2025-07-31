@@ -54,7 +54,7 @@ export class MetadataParser {
   private static async parseXmlMetadata(xmlData: string): Promise<FlowMetadata> {
     try {
       const parsed = await parseStringPromise(xmlData, {
-        explicitArray: false,
+        explicitArray: true,
         normalizeTags: true,
         valueProcessors: [
           (value: string) => {
