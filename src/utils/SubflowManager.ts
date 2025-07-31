@@ -3,7 +3,8 @@ import { Logger } from './Logger.js';
 import { SchemaManager } from './SchemaManager.js';
 import { SubflowParser } from './parsers/SubflowParser.js';
 import { SubflowAnalyzer } from './analyzers/SubflowAnalyzer.js';
-import { SubflowAnalysis, SubflowDetails } from './interfaces/SubflowTypes.js';
+import { SubflowAnalysis } from './interfaces/analysis/FlowAnalysis.js';
+import { FlowElement, FlowMetadata } from './interfaces/types.js';
 
 export class SubflowManager {
   private subflowCache = new Map<string, SubflowAnalysis>();
@@ -16,7 +17,6 @@ export class SubflowManager {
     private schemaManager: SchemaManager,
     private getFlowXml?: (flowName: string) => string | undefined
   ) {
-    // Only pass connection if not doing local file analysis
     this.parser = new SubflowParser(getFlowXml ? null : connection);
     this.analyzer = new SubflowAnalyzer();
   }
@@ -24,38 +24,32 @@ export class SubflowManager {
   private formatFlowAnalysis(analysis: SubflowAnalysis, indent: string = ''): string {
     const lines: string[] = [];
     
-    // Flow header
     lines.push(`${indent}Flow: ${analysis.flowName}`);
-    lines.push(`${indent}Version: ${analysis.version.version} (${analysis.version.status})`);
-    lines.push(`${indent}Last Modified: ${analysis.version.lastModified}`);
+    const version = analysis.version || { version: 'Unknown', status: 'Unknown', lastModified: 'Unknown' };
+    lines.push(`${indent}Version: ${version.version} (${version.status})`);
+    lines.push(`${indent}Last Modified: ${version.lastModified}`);
     lines.push('');
 
-    // Elements breakdown
     lines.push(`${indent}Elements:`);
-    lines.push(`${indent}  Direct elements: ${analysis.elements.total}`);
+    lines.push(`${indent}  Direct elements: ${analysis.elements.size}`);
     lines.push(`${indent}  Total (with subflows): ${analysis.totalElementsWithSubflows}`);
     lines.push(`${indent}  Breakdown:`);
-    Object.entries(analysis.elements)
-      .filter(([key]) => key !== 'total')
-      .filter(([_, value]) => value && value > 0)
-      .forEach(([key, value]) => {
-        lines.push(`${indent}    ${key}: ${value}`);
-      });
+    analysis.elements.forEach((value, key) => {
+      lines.push(`${indent}    ${key}: ${value.type}`);
+    });
     lines.push('');
 
-    // SOQL Analysis
     if (analysis.soqlQueries > 0) {
       lines.push(`${indent}SOQL Analysis:`);
       lines.push(`${indent}  Direct Queries: ${analysis.soqlQueries}`);
       lines.push(`${indent}  Cumulative Queries: ${analysis.cumulativeSoqlQueries}`);
       lines.push(`${indent}  Sources:`);
-      analysis.soqlSources.forEach(source => {
+      (analysis.soqlSources || []).forEach(source => {
         lines.push(`${indent}    - ${source}`);
       });
       lines.push('');
     }
 
-    // DML Operations
     if (analysis.dmlOperations > 0) {
       lines.push(`${indent}DML Operations:`);
       lines.push(`${indent}  Direct Operations: ${analysis.dmlOperations}`);
@@ -63,48 +57,35 @@ export class SubflowManager {
       lines.push('');
     }
 
-    // Subflows
-    if (analysis.subflows && analysis.subflows.length > 0) {
+    if (analysis.subflows.length > 0) {
       lines.push(`${indent}Subflows (${analysis.subflows.length}):`);
       analysis.subflows.forEach(subflow => {
-        lines.push(`${indent}  ${subflow.name}:`);
-        lines.push(`${indent}    Version: ${subflow.version.version}`);
-        lines.push(`${indent}    Elements: ${subflow.elements.total}`);
-        if (subflow.references.some(ref => ref.isInLoop)) {
-          lines.push(`${indent}    Called in Loop: Yes`);
+        lines.push(`${indent}  ${subflow.flowName}:`);
+        if (subflow.version) {
+          lines.push(`${indent}    Version: ${subflow.version.version}`);
         }
-        if (subflow.references.length > 0) {
-          const ref = subflow.references[0];
-          if (ref.inputAssignments?.length) {
-            lines.push(`${indent}    Input Parameters: ${ref.inputAssignments.length}`);
-          }
-          if (ref.outputAssignments?.length) {
-            lines.push(`${indent}    Output Parameters: ${ref.outputAssignments.length}`);
-          }
-        }
+        lines.push(`${indent}    Elements: ${subflow.elements.size}`);
       });
       lines.push('');
     }
 
-    // Complexity Analysis
     lines.push(`${indent}Complexity Analysis:`);
     lines.push(`${indent}  Direct Complexity: ${analysis.complexity}`);
     lines.push(`${indent}  Cumulative Complexity: ${analysis.cumulativeComplexity}`);
     lines.push('');
 
-    // Bulkification
     lines.push(`${indent}Bulkification:`);
     lines.push(`${indent}  Required: ${analysis.shouldBulkify}`);
     lines.push(`${indent}  Reason: ${analysis.bulkificationReason}`);
     lines.push('');
 
-    // Apex Recommendation
     lines.push(`${indent}Apex Conversion Recommendation:`);
-    lines.push(`${indent}  Should Split: ${analysis.apexRecommendation.shouldSplit}`);
-    lines.push(`${indent}  Reason: ${analysis.apexRecommendation.reason}`);
-    if (analysis.apexRecommendation.suggestedClasses.length > 0) {
+    const recommendationText = analysis.recommendations.map(rec => rec.reason).join(', ') || 'No recommendations';
+    lines.push(`${indent}  Recommendations: ${recommendationText}`);
+    const classes = analysis.recommendations.flatMap(rec => rec.suggestedClasses);
+    if (classes.length > 0) {
       lines.push(`${indent}  Suggested Classes:`);
-      analysis.apexRecommendation.suggestedClasses.forEach(className => {
+      classes.forEach(className => {
         lines.push(`${indent}    - ${className}`);
       });
     }
@@ -119,15 +100,16 @@ export class SubflowManager {
     flowName?: string,
     loopInfo?: { isInLoop: boolean; loopContext: string }
   ): Promise<SubflowAnalysis> {
-    // Try to get local XML if not provided
     if (!xml && this.getFlowXml) {
       xml = this.getFlowXml(subflowName);
     }
     if (depth >= SubflowManager.MAX_RECURSION_DEPTH) {
       Logger.warn('SubflowManager', `Maximum recursion depth reached for subflow: ${subflowName}`);
-      const emptyAnalysis: SubflowAnalysis = {
+      return {
+        depth: 0,
+        loops: [],
+        loopContexts: new Map(),
         processType: 'Flow',
-        recommendations: [],
         apiVersion: '1.0',
         bulkificationScore: 100,
         totalElements: 0,
@@ -143,9 +125,7 @@ export class SubflowManager {
         parameters: new Map(),
         version: { version: '0', status: 'Unknown', lastModified: new Date().toISOString() },
         soqlSources: [],
-        dmlSources: [],
-        isInLoop: false,
-        elements: { total: 0 },
+        elements: new Map<string, FlowElement>(),
         subflows: [],
         totalElementsWithSubflows: 0,
         operationSummary: {
@@ -156,31 +136,25 @@ export class SubflowManager {
             soql: { total: 0, inLoop: 0 }
           }
         },
-        apexRecommendation: {
+        recommendations: [{
           shouldSplit: false,
           reason: 'Max recursion depth reached',
           suggestedClasses: ['MainFlowProcessor']
-        }
+        }]
       };
-      return emptyAnalysis;
     }
-
-    /* console.log(`
-Analyzing flow: ${subflowName}...`); */
     
     if (this.subflowCache.has(subflowName)) {
       Logger.debug('SubflowManager', `Using cached analysis for subflow: ${subflowName}`);
-      const analysis = this.subflowCache.get(subflowName)!;
-      /* console.log(this.formatFlowAnalysis(analysis)); */
-      return analysis;
+      return this.subflowCache.get(subflowName)!;
     }
 
     try {
       Logger.debug('SubflowManager', `Fetching metadata for subflow: ${subflowName}`);
       const parsedMetadata = await this.parser.getSubflowMetadata(subflowName, false, xml);
       const analysis = await this.analyzer.analyzeMetadata(
-        parsedMetadata, 
-        depth, 
+        parsedMetadata,
+        depth,
         flowName || subflowName,
         loopInfo
       );

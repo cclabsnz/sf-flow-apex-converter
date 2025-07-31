@@ -1,9 +1,9 @@
-import { FlowMetadata, FlowElements } from '../interfaces/SubflowTypes.js';
-import { LoopMetrics, LoopContext } from '../interfaces/FlowTypes.js';
+import { FlowMetadata } from '../../types/elements';
+import { LoopMetrics, LoopContext } from '../../types/loops';
 import { Logger } from '../Logger.js';
 
 export class LoopAnalyzer {
-  private countElements(elements: any): number {
+  private countElements(elements: unknown[] | unknown): number {
     return Array.isArray(elements) ? elements.length : 1;
   }
 
@@ -57,9 +57,9 @@ export class LoopAnalyzer {
         containsSubflows: nestedElements.subflows > 0,
         nestedElements,
         loopVariables: {
-          inputCollection: loop.collectionReference?.[0] || '',
-          currentItem: loop.iterationVariable?.[0] || '',
-          iterationOrder: (loop.iterationOrder?.[0] || 'Asc') as 'Asc' | 'Desc'
+          inputCollection: Array.isArray(loop.collectionReference) ? loop.collectionReference[0] : (loop.collectionReference || ''),
+          currentItem: Array.isArray(loop.iterationVariable) ? loop.iterationVariable[0] : (loop.iterationVariable || ''),
+          iterationOrder: (Array.isArray(loop.iterationOrder) ? loop.iterationOrder[0] : loop.iterationOrder || 'Asc') as 'Asc' | 'Desc'
         }
       };
 

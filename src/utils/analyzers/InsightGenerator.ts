@@ -72,7 +72,7 @@ export class InsightGenerator {
       
       analysis.subflows.forEach(subflow => {
         totalOperations += subflow.dmlOperations + subflow.soqlQueries;
-        if (subflow.isInLoop) {
+        if (Object.values(subflow.loopContexts).some(context => context.isInLoop)) {
           operationsInLoop += subflow.dmlOperations + subflow.soqlQueries;
         }
       });

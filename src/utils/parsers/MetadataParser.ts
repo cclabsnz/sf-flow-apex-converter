@@ -1,6 +1,6 @@
 import { parseStringPromise } from 'xml2js';
 import { Logger } from '../Logger.js';
-import { FlowMetadata } from '../interfaces/SubflowTypes.js';
+import { FlowMetadata } from '../../types/elements';
 
 export enum MetadataFormat {
   JSON = 'JSON',
@@ -9,7 +9,7 @@ export enum MetadataFormat {
 }
 
 export class MetadataParser {
-  static detectFormat(metadata: any): MetadataFormat {
+  static detectFormat(metadata: unknown): MetadataFormat {
     if (!metadata) return MetadataFormat.UNKNOWN;
     
     // Check if it's already a parsed JSON object
@@ -37,7 +37,7 @@ export class MetadataParser {
     return MetadataFormat.UNKNOWN;
   }
 
-  static async parseMetadata(metadata: any): Promise<FlowMetadata> {
+  static async parseMetadata(metadata: unknown): Promise<FlowMetadata> {
     const format = this.detectFormat(metadata);
     Logger.info('MetadataParser', `Parsing metadata as ${format}`);
 
@@ -45,7 +45,7 @@ export class MetadataParser {
       case MetadataFormat.JSON:
         return this.parseJsonMetadata(metadata);
       case MetadataFormat.XML:
-        return this.parseXmlMetadata(metadata);
+        return this.parseXmlMetadata(metadata as string);
       default:
         throw new Error(`Unsupported metadata format: ${format}`);
     }
@@ -70,36 +70,63 @@ export class MetadataParser {
       });
 
       Logger.debug('MetadataParser', 'Successfully parsed XML metadata');
-      return parsed.Flow || parsed;
+      const flow = parsed.Flow || parsed;
+      
+      // Add version info if provided
+      if (flow.Version && flow.Status) {
+        flow._flowVersion = {
+          version: flow.Version[0] || '1.0',
+          status: flow.Status[0] || 'Unknown',
+          lastModified: new Date().toISOString()
+        };
+      } else {
+        flow._flowVersion = {
+          version: '1.0',
+          status: 'Unknown',
+          lastModified: new Date().toISOString()
+        };
+      }
+
+      return flow as FlowMetadata;
     } catch (error: any) {
       Logger.error('MetadataParser', 'Failed to parse XML metadata', error);
       throw new Error(`Failed to parse XML metadata: ${error.message || error}`);
     }
   }
 
-  private static parseJsonMetadata(jsonData: any): FlowMetadata {
+  private static parseJsonMetadata(jsonData: unknown): FlowMetadata {
     try {
       // If it's a string that might be JSON, try to parse it
+      let parsedData: any = jsonData;
       if (typeof jsonData === 'string') {
         try {
-          jsonData = JSON.parse(jsonData);
+          parsedData = JSON.parse(jsonData);
         } catch (e) {
           Logger.warn('MetadataParser', 'Failed to parse JSON string, treating as raw metadata');
         }
       }
 
       // Ensure we have a Flow property if needed
-      const metadata = jsonData.Flow || jsonData;
+      const metadata = parsedData.Flow || parsedData;
+
+      // Add version info if needed
+      if (!metadata._flowVersion) {
+        metadata._flowVersion = {
+          version: '1.0',
+          status: 'Unknown',
+          lastModified: new Date().toISOString()
+        };
+      }
 
       // Normalize arrays
-      return this.normalizeArrays(metadata);
+      return this.normalizeArrays(metadata) as FlowMetadata;
     } catch (error: any) {
       Logger.error('MetadataParser', 'Failed to parse JSON metadata', error);
       throw new Error(`Failed to parse JSON metadata: ${error.message || error}`);
     }
   }
 
-  private static normalizeArrays(metadata: any): any {
+  private static normalizeArrays(metadata: unknown): unknown {
     if (!metadata || typeof metadata !== 'object') {
       return metadata;
     }
@@ -123,8 +150,9 @@ export class MetadataParser {
     ];
 
     const normalized: any = Array.isArray(metadata) ? [] : {};
+    const objMetadata = metadata as Record<string, unknown>;
 
-    for (const [key, value] of Object.entries(metadata)) {
+    for (const [key, value] of Object.entries(objMetadata)) {
       if (arrayFields.includes(key) && value && !Array.isArray(value)) {
         // Convert to array if it's a known array field
         normalized[key] = [this.normalizeArrays(value)];
