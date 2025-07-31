@@ -1,6 +1,6 @@
 import { Connection } from 'jsforce';
 import { Logger } from './Logger.js';
-import { ComprehensiveFlowAnalysis } from './FlowAnalyzer.js';
+import { ComprehensiveFlowAnalysis } from './interfaces/types.js';
 import { execSync } from 'child_process';
 
 interface ObjectSchema {
@@ -85,7 +85,7 @@ export class OrgValidator {
       ];
 
       criticalLimits.forEach(limit => {
-        const limitInfo = limits.result.find((l: any) => l.name === limit);
+        const limitInfo = limits.result.find((l: { name: string; used: number; max: number; }) => l.name === limit);
         if (limitInfo) {
           const usagePercentage = (limitInfo.used / limitInfo.max) * 100;
           if (usagePercentage > 90) {
@@ -115,7 +115,7 @@ export class OrgValidator {
           sharingModel: describe.custom ? 'Private' : 'Public'
         };
 
-        describe.fields.forEach(field => {
+        (describe.fields as Array<Record<string, any>>).forEach(field => {
           schema.fields.set(field.name, {
             type: field.type,
             length: field.length,

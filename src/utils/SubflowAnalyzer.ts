@@ -1,240 +1,24 @@
 import { Logger } from './Logger.js';
-import {
-  FlowElements,
-  FlowMetadata,
-  SubflowAnalysis,
-  SubflowDetails,
-  ApexRecommendation
-} from './interfaces/SubflowTypes.js';
+import { FlowMetadata } from './interfaces/types.js';
+import { SubflowAnalysis } from './interfaces/analysis/FlowAnalysis.js';
+import { FlowElement } from '../types';
+import { ElementCounter } from './analyzers/subflow/ElementCounter.js';
+import { ComplexityAnalyzer } from './analyzers/subflow/ComplexityAnalyzer.js';
+import { BulkificationAnalyzer } from './analyzers/subflow/BulkificationAnalyzer.js';
+import { RecommendationGenerator } from './analyzers/subflow/RecommendationGenerator.js';
 
 export class SubflowAnalyzer {
-  private countElements(elements: any): number {
-    return Array.isArray(elements) ? elements.length : 1;
-  }
-
-  private countFlowElements(metadata: FlowMetadata): FlowElements {
-    const elements: FlowElements = { total: 0 };
-    
-    const elementTypes = [
-      { key: 'recordLookups', name: 'Record Lookups' },
-      { key: 'recordCreates', name: 'Record Creates' },
-      { key: 'recordUpdates', name: 'Record Updates' },
-      { key: 'recordDeletes', name: 'Record Deletes' },
-      { key: 'decisions', name: 'Decisions' },
-      { key: 'loops', name: 'Loops' },
-      { key: 'assignments', name: 'Assignments' },
-      { key: 'actionCalls', name: 'Apex Actions' },
-      { key: 'subflows', name: 'Subflows' }
-    ];
-
-    for (const type of elementTypes) {
-      if (metadata[type.key]) {
-        const count = this.countElements(metadata[type.key]);
-        elements[type.key] = count;
-        elements.total += count;
-        Logger.debug('SubflowAnalyzer', `Found ${count} ${type.name}`);
-      }
-    }
-
-    return elements;
-  }
-
-  private calculateComplexity(metadata: FlowMetadata, isSubflow: boolean = false): number {
-    let complexity = 1;
-
-    // Add complexity for decisions with higher weight for nested decisions
-    if (metadata.decisions) {
-      const decisionWeight = isSubflow ? 3 : 2;
-      complexity += this.countElements(metadata.decisions) * decisionWeight;
-    }
-
-    // Add complexity for loops with higher weight for nested loops
-    if (metadata.loops) {
-      const loopWeight = isSubflow ? 4 : 3;
-      complexity += this.countElements(metadata.loops) * loopWeight;
-    }
-
-    // Add complexity for DML operations
-    const dmlOps = (metadata.recordCreates ? this.countElements(metadata.recordCreates) : 0) +
-                  (metadata.recordUpdates ? this.countElements(metadata.recordUpdates) : 0) +
-                  (metadata.recordDeletes ? this.countElements(metadata.recordDeletes) : 0);
-    complexity += dmlOps * 2;
-
-    // Add complexity for SOQL queries
-    const soqlQueries = (metadata.recordLookups ? this.countElements(metadata.recordLookups) : 0) +
-                       (metadata.dynamicChoiceSets ? this.countElements(metadata.dynamicChoiceSets) : 0);
-    complexity += soqlQueries * 2;
-
-    // Add complexity for subflows
-    if (metadata.subflows) {
-      complexity += this.countElements(metadata.subflows) * (isSubflow ? 3 : 2);
-    }
-
-    // Add complexity for formula elements
-    if (metadata.formulas) {
-      const formulas = Array.isArray(metadata.formulas) ? metadata.formulas : [metadata.formulas];
-      formulas.forEach((formula: any) => {
-        if (formula.expression?.[0]?.includes('.')) {
-          complexity += 1; // Additional complexity for cross-object formulas
-        }
-      });
-    }
-
-    return complexity;
-  }
-
-  private shouldBulkifySubflow(
-    dmlOps: number, 
-    soqlQueries: number, 
-    complexity: number,
-    metadata: FlowMetadata,
-    soqlInLoop: boolean
-  ): boolean {
-    // Always bulkify if has DML or SOQL
-    if (dmlOps > 0 || soqlQueries > 0) return true;
-    
-    // Bulkify if complex
-    if (complexity > 5) return true;
-    
-    // Bulkify if has loops
-    if (metadata.loops) return true;
-    
-    return false;
-  }
-
-  private getBulkificationReason(
-    dmlOps: number,
-    soqlQueries: number,
-    complexity: number,
-    metadata: FlowMetadata,
-    soqlInLoop: boolean
-  ): string {
-    const reasons: string[] = [];
-    
-    if (dmlOps > 0) reasons.push(`Contains ${dmlOps} DML operation(s)`);
-    if (soqlQueries > 0) {
-      let soqlMessage = `Contains ${soqlQueries} SOQL queries`;
-      if (soqlInLoop) {
-        soqlMessage += ' (detected in: loop recordLookups';
-        if (metadata.loops) {
-          const loops = Array.isArray(metadata.loops) ? metadata.loops : [metadata.loops];
-          for (const loop of loops) {
-            if (loop.elements) {
-              const elements = Array.isArray(loop.elements) ? loop.elements : [loop.elements];
-              for (const element of elements) {
-                if (element.actionCall || element.type?.[0] === 'ActionCall') {
-                  soqlMessage += ', Apex actions';
-                  break;
-                }
-                if (element.subflow || element.type?.[0] === 'Subflow') {
-                  soqlMessage += ', subflows';
-                  break;
-                }
-              }
-            }
-          }
-        }
-        soqlMessage += ')';
-      }
-      reasons.push(soqlMessage);
-    }
-    if (complexity > 5) reasons.push(`High complexity score: ${complexity}`);
-    if (metadata.loops) reasons.push('Contains loops');
-    
-    return reasons.length > 0 
-      ? reasons.join(', ')
-      : 'Simple subflow - bulkification not required';
-  }
-
-  private getApexRecommendation(
-    cumulativeComplexity: number,
-    cumulativeDmlOps: number,
-    cumulativeSoqlQueries: number,
-    subflows: SubflowDetails[],
-    processedSubflows: Set<string>
-  ): ApexRecommendation {
-    const complexityThreshold = 15;
-    const operationsThreshold = 5;
-    const suggestedClasses: string[] = [];
-    let shouldSplit = false;
-    let reasons: string[] = [];
-
-    // Check complexity threshold
-    if (cumulativeComplexity > complexityThreshold) {
-      shouldSplit = true;
-      reasons.push(`High cumulative complexity (${cumulativeComplexity} > ${complexityThreshold})`);
-    }
-
-    // Check operations threshold
-    if (cumulativeDmlOps + cumulativeSoqlQueries > operationsThreshold) {
-      shouldSplit = true;
-      reasons.push(`High number of database operations (${cumulativeDmlOps + cumulativeSoqlQueries} > ${operationsThreshold})`);
-    }
-
-    // Analyze subflow patterns
-    const subflowGroups = new Map<string, SubflowDetails[]>();
-    subflows.forEach(sf => {
-      if (!processedSubflows.has(sf.name)) {
-        const key = this.getSubflowGroupKey(sf);
-        if (!subflowGroups.has(key)) {
-          subflowGroups.set(key, []);
-        }
-        subflowGroups.get(key)!.push(sf);
-      }
-    });
-
-    // Suggest class splits based on subflow groups
-    subflowGroups.forEach((group, key) => {
-      if (group.length > 0) {
-        const className = this.generateClassName(key, group[0].name);
-        suggestedClasses.push(className);
-      }
-    });
-
-    if (suggestedClasses.length === 0) {
-      suggestedClasses.push('MainFlowProcessor');
-    }
-
-    return {
-      shouldSplit,
-      reason: reasons.join(', ') || 'Simple flow structure - single class recommended',
-      suggestedClasses
-    };
-  }
-
-  private getSubflowGroupKey(subflow: SubflowDetails): string {
-    const elements = subflow.elements;
-    if (elements.recordLookups && elements.recordLookups > 0) return 'DataAccess';
-    if ((elements.recordCreates || 0) + (elements.recordUpdates || 0) + (elements.recordDeletes || 0) > 0) return 'DataModification';
-    if (elements.decisions && elements.decisions > 0) return 'BusinessLogic';
-    return 'Utility';
-  }
-
-  private generateClassName(groupType: string, subflowName: string): string {
-    const baseName = subflowName.replace(/[^a-zA-Z0-9]/g, '');
-    switch (groupType) {
-      case 'DataAccess': return `${baseName}DataService`;
-      case 'DataModification': return `${baseName}DataManager`;
-      case 'BusinessLogic': return `${baseName}BusinessService`;
-      default: return `${baseName}Processor`;
-    }
-  }
-
   async analyzeMetadata(
     metadata: FlowMetadata,
     depth: number = 0
   ): Promise<SubflowAnalysis> {
     let dmlOperations = 0;
     let soqlQueries = 0;
-    let complexity = 0;
-    let cumulativeComplexity = 0;
-    let cumulativeDmlOperations = 0;
-    let cumulativeSoqlQueries = 0;
     let soqlInLoop = false;
     const parameters = new Map<string, any>();
     const soqlSources = new Set<string>();
     const flowVersion = metadata._flowVersion;
-    const subflowDetails: SubflowDetails[] = [];
+    const subflowDetails: any[] = [];
     let totalElementsWithSubflows = 0;
     const processedSubflows = new Set<string>();
 
@@ -243,10 +27,10 @@ export class SubflowAnalyzer {
       lastModified: flowVersion.lastModified
     });
 
-    // Count operations
-    if (metadata.recordCreates) dmlOperations += this.countElements(metadata.recordCreates);
-    if (metadata.recordUpdates) dmlOperations += this.countElements(metadata.recordUpdates);
-    if (metadata.recordDeletes) dmlOperations += this.countElements(metadata.recordDeletes);
+    // Count DML operations
+    if (metadata.recordCreates) dmlOperations += ElementCounter.countElements(metadata.recordCreates);
+    if (metadata.recordUpdates) dmlOperations += ElementCounter.countElements(metadata.recordUpdates);
+    if (metadata.recordDeletes) dmlOperations += ElementCounter.countElements(metadata.recordDeletes);
 
     // Record Lookups (Get Records)
     if (metadata.recordLookups) {
@@ -263,7 +47,7 @@ export class SubflowAnalyzer {
     }
 
     // Record-Triggered Flow
-    if (metadata.trigger && metadata.trigger[0]?.type?.[0] === 'RecordAfterSave') {
+    if (Array.isArray(metadata.trigger?.[0]?.type) && metadata.trigger[0].type[0] === 'RecordAfterSave') {
       soqlQueries++; // Count implicit query for the triggering record
       soqlSources.add('Record-Triggered Flow');
     }
@@ -272,7 +56,7 @@ export class SubflowAnalyzer {
     if (metadata.formulas) {
       const formulas = Array.isArray(metadata.formulas) ? metadata.formulas : [metadata.formulas];
       for (const formula of formulas) {
-        if (formula.expression?.[0]?.includes('.')) {
+        if (typeof formula.expression?.[0] === 'string' && formula.expression[0].includes('.')) {
           soqlQueries++; // Count cross-object reference queries
           soqlSources.add('Cross-Object Formula References');
         }
@@ -280,10 +64,10 @@ export class SubflowAnalyzer {
     }
 
     // Calculate complexity
-    complexity = this.calculateComplexity(metadata);
-    cumulativeComplexity = complexity;
-    cumulativeDmlOperations = dmlOperations;
-    cumulativeSoqlQueries = soqlQueries;
+    const complexity = ComplexityAnalyzer.calculateComplexity(metadata);
+    const cumulativeComplexity = complexity;
+    const cumulativeDmlOperations = dmlOperations;
+    const cumulativeSoqlQueries = soqlQueries;
 
     // Extract parameters
     if (metadata.variables) {
@@ -300,10 +84,15 @@ export class SubflowAnalyzer {
       });
     }
 
-    const shouldBulkify = this.shouldBulkifySubflow(dmlOperations, soqlQueries, complexity, metadata, soqlInLoop);
+    const shouldBulkify = BulkificationAnalyzer.shouldBulkify(
+      dmlOperations, 
+      soqlQueries, 
+      complexity, 
+      metadata, 
+      soqlInLoop
+    );
 
-    // Calculate apex class split recommendation
-    const apexRecommendation = this.getApexRecommendation(
+    const apexRecommendation = RecommendationGenerator.getApexRecommendation(
       cumulativeComplexity,
       cumulativeDmlOperations,
       cumulativeSoqlQueries,
@@ -311,13 +100,20 @@ export class SubflowAnalyzer {
       processedSubflows
     );
 
-    const elements = this.countFlowElements(metadata);
-    totalElementsWithSubflows = elements.total;
+    const elements = new Map<string, FlowElement>();
+    totalElementsWithSubflows = ElementCounter.countFlowElements(metadata).total;
 
     return {
+      depth,
       flowName: metadata.name?.[0] || 'Unknown',
       shouldBulkify,
-      bulkificationReason: this.getBulkificationReason(dmlOperations, soqlQueries, complexity, metadata, soqlInLoop),
+      bulkificationReason: BulkificationAnalyzer.getBulkificationReason(
+        dmlOperations, 
+        soqlQueries, 
+        complexity, 
+        metadata, 
+        soqlInLoop
+      ),
       complexity,
       cumulativeComplexity,
       dmlOperations,
@@ -328,9 +124,23 @@ export class SubflowAnalyzer {
       version: flowVersion,
       soqlSources: Array.from(soqlSources),
       elements,
-      subflows: subflowDetails,
+      subflows: [],
       totalElementsWithSubflows,
-      apexRecommendation
+      recommendations: [{...apexRecommendation}],
+      processType: 'Flow',
+      totalElements: totalElementsWithSubflows,
+      bulkificationScore: 100,
+      loops: [],
+      loopContexts: new Map(),
+      apiVersion: '58.0',
+      operationSummary: {
+        totalOperations: {
+          dml: { total: 0, inLoop: 0 },
+          soql: { total: 0, inLoop: 0 }
+        },
+        dmlOperations: [],
+        soqlQueries: []
+      }
     };
   }
 }

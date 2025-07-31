@@ -1,4 +1,5 @@
-import { FlowMetadata, FlowElements } from '../interfaces/SubflowTypes.js';
+import { FlowMetadata } from '../interfaces/SubflowTypes.js';
+import { FlowElementsImpl } from './FlowElementsImpl.js';
 import { Logger } from '../Logger.js';
 
 export class ElementAnalyzer {
@@ -6,8 +7,8 @@ export class ElementAnalyzer {
     return Array.isArray(elements) ? elements.length : 1;
   }
 
-  analyzeElements(metadata: FlowMetadata): FlowElements {
-    const elements: FlowElements = { total: 0 };
+  analyzeElements(metadata: FlowMetadata): FlowElementsImpl {
+    const elements = new FlowElementsImpl();
     
     const elementTypes = [
       { key: 'recordLookups', name: 'Record Lookups' },
@@ -24,8 +25,8 @@ export class ElementAnalyzer {
     for (const type of elementTypes) {
       if (metadata[type.key]) {
         const count = this.countElements(metadata[type.key]);
-        elements[type.key] = count;
-        elements.total += count;
+        elements.set(type.key, count);
+        elements.set('total', (elements.total || 0) + count);
         Logger.debug('ElementAnalyzer', `Found ${count} ${type.name}`);
       }
     }

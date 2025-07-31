@@ -1,4 +1,4 @@
-import { FlowMetadata } from '../../interfaces/SubflowTypes.js';
+import { FlowMetadata } from '../../../types';
 import { Logger } from '../../Logger.js';
 
 export interface LoopContent {

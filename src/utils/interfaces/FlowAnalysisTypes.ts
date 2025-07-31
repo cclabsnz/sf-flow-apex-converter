@@ -9,7 +9,7 @@ export interface FlowAnalysisBase {
   soqlQueries: number;
   bulkificationScore: number;
   elements: Map<string, FlowElement>;
-  recommendations: string[];
+  recommendations: { shouldSplit: boolean; reason: string; suggestedClasses: string[]; }[];
   apiVersion: string;
   subflows: SubflowAnalysis[];
   operationSummary: OperationSummary;

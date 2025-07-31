@@ -1,4 +1,4 @@
-import { FlowMetadata } from '../../interfaces/SubflowTypes.js';
+import { FlowMetadata } from '../../../types';
 import { Logger } from '../../Logger.js';
 
 export interface LoopVariables {
@@ -10,9 +10,9 @@ export interface LoopVariables {
 export class LoopVariableAnalyzer {
   analyzeLoopVariables(loop: any): LoopVariables {
     const variables: LoopVariables = {
-      inputCollection: loop.collectionReference?.[0] || '',
-      currentItem: loop.iterationVariable?.[0] || '',
-      iterationOrder: (loop.iterationOrder?.[0] || 'Asc') as 'Asc' | 'Desc'
+      inputCollection: loop.collectionReference && loop.collectionReference[0] ? loop.collectionReference[0] : '',
+      currentItem: loop.iterationVariable && loop.iterationVariable[0] ? loop.iterationVariable[0] : '',
+      iterationOrder: (loop.iterationOrder && loop.iterationOrder[0] ? loop.iterationOrder[0] : 'Asc') as 'Asc' | 'Desc'
     };
 
     Logger.debug('LoopVariableAnalyzer', 
