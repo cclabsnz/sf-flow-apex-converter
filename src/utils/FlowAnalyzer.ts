@@ -54,6 +54,8 @@ export interface SecurityContext {
   requiredFields: Map<string, Set<string>>;
 }
 
+import { SubflowAnalysis } from './interfaces/SubflowTypes.js';
+
 export interface ComprehensiveFlowAnalysis {
   flowName: string;
   processType: string;
@@ -66,6 +68,7 @@ export interface ComprehensiveFlowAnalysis {
   recommendations: string[];
   securityContext: SecurityContext;
   apiVersion: string;
+  subflows: SubflowAnalysis[];
 }
 
 export class FlowAnalyzer {
@@ -237,7 +240,8 @@ export class FlowAnalyzer {
       objectDependencies: new Set(),
       recommendations: [],
       securityContext: this.analyzeSecurityContext(metadata),
-      apiVersion: metadata.apiVersion?.[0] || '58.0'
+      apiVersion: metadata.apiVersion?.[0] || '58.0',
+      subflows: []
     };
 
     try {
@@ -285,7 +289,7 @@ export class FlowAnalyzer {
           analysis.soqlQueries += elements.length;
         }
 
-        elements.forEach(element => {
+        for (const element of elements) {
           const flowElement: FlowElement = {
             type: elementType as FlowElementType,
             name: element.name?.[0] || 'Unnamed',
@@ -298,7 +302,23 @@ export class FlowAnalyzer {
           if (element.object) {
             analysis.objectDependencies.add(element.object[0]);
           }
-        });
+
+          if (elementType === FlowElementType.SUBFLOW) {
+            const subflowName = element.flowName?.[0];
+            if (subflowName) {
+              try {
+                const subflowAnalysis = await this.subflowManager.analyzeSubflow(subflowName);
+                analysis.subflows.push(subflowAnalysis);
+                // Aggregate metrics from subflow
+                analysis.totalElements += subflowAnalysis.totalElementsWithSubflows;
+                analysis.dmlOperations += subflowAnalysis.cumulativeDmlOperations;
+                analysis.soqlQueries += subflowAnalysis.cumulativeSoqlQueries;
+              } catch (error) {
+                Logger.warn('FlowAnalyzer', `Could not analyze subflow ${subflowName}: ${(error as Error).message}`);
+              }
+            }
+          }
+        }
       }
     }
   }
