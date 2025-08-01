@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 
-// @ts-ignore
 require('abort-controller/polyfill');
 import { Command } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Org } from '@salesforce/core';
-import { Logger } from './utils/Logger.js';
+import { Logger, LogLevel } from './utils/Logger.js';
 import { Connection } from 'jsforce';
 import { FlowAnalyzer } from './utils/FlowAnalyzer.js';
 import { ApexGenerator } from './utils/ApexGenerator.js';
@@ -31,8 +30,10 @@ program
   .option('--log-level <level>', 'Set the log level (debug, info, warn, error)', 'info')
   .option('--quiet', 'Disable logging')
   .action(async (flowPathOrName, options) => {
-    const logger = new Logger(options.logLevel, options.quiet);
-    logger.info('Starting...');
+    // Setup logger
+    Logger.setLogLevel(options.logLevel?.toUpperCase() as LogLevel || LogLevel.INFO);
+    Logger.enableLogs(!options.quiet);
+    Logger.info('CLI', 'Starting...');
 
     try {
       let flowXml;
@@ -53,17 +54,17 @@ program
       };
 
       if (options.fromOrg) {
-        logger.info('Fetching flow from org...');
-        const orgAlias = options.targetOrg || (await Org.defaultUsername());
+        Logger.info('CLI', 'Fetching flow from org...');
+        const orgAlias = options.targetOrg;
         if (!orgAlias) {
-          throw new Error('No default org set. Use --target-org or set a default org.');
+          throw new Error('No target org specified. Use --target-org to specify an org.');
         }
         org = await Org.create({ aliasOrUsername: orgAlias });
-        conn = org.getConnection();
+        conn = org.getConnection() as any;
         const orgMetadataFetcher = new OrgMetadataFetcher(conn);
         const flowResult = await orgMetadataFetcher.fetchFlowFromOrg(flowPathOrName);
         flowXml = flowResult.Metadata;
-        logger.info(`Successfully fetched flow "${flowPathOrName}" from org.`);
+        Logger.info('CLI', `Successfully fetched flow "${flowPathOrName}" from org.`);
       } else {
         const fullPath = path.join(process.cwd(), flowPathOrName);
         if (!fs.existsSync(fullPath) || !fs.lstatSync(fullPath).isFile()) {
@@ -71,7 +72,7 @@ program
         }
         flowXml = fs.readFileSync(fullPath, 'utf-8');
         conn = new Connection({});
-        logger.info(`Successfully read flow from file: ${fullPath}`);
+        Logger.info('CLI', `Successfully read flow from file: ${fullPath}`);
       }
 
       const schemaManager = new SchemaManager(conn);
@@ -92,46 +93,47 @@ program
       const analysis = await flowAnalyzer.analyzeFlowComprehensive(wrappedMetadata);
 
       if (options.verbose) {
-        logger.info('--- Flow Analysis ---');
-        logger.info(JSON.stringify(analysis, null, 2));
-        logger.info('---------------------');
+        Logger.info('CLI', '--- Flow Analysis ---');
+        Logger.info('CLI', JSON.stringify(analysis, null, 2));
+        Logger.info('CLI', '---------------------');
       }
 
       if (analysis.recommendations.length > 0) {
-        logger.info('Bulkification is required. Generating Apex class...');
+        Logger.info('CLI', 'Bulkification is required. Generating Apex class...');
         const apexClass = ApexGenerator.generateApex(analysis);
 
-        logger.info('--- Generated Apex Class ---');
-        logger.info(apexClass);
-        logger.info('--------------------------');
+        Logger.info('CLI', '--- Generated Apex Class ---');
+        Logger.info('CLI', apexClass);
+        Logger.info('CLI', '--------------------------');
 
         if (options.deploy || options.testOnly) {
           if (!conn) {
-             const orgAlias = options.targetOrg || (await Org.defaultUsername());
+             const orgAlias = options.targetOrg;
              if (!orgAlias) {
-               throw new Error('No default org set. Use --target-org or set a default org.');
+               throw new Error('No target org specified. Use --target-org to specify an org.');
              }
              org = await Org.create({ aliasOrUsername: orgAlias });
-             conn = org.getConnection();
+             conn = org.getConnection() as any;
           }
           const result = await ApexGenerator.deployApex(analysis, options.testOnly, options.targetOrg, conn);
 
           if(result.success) {
-            logger.info('Deployment successful.');
+            Logger.info('CLI', 'Deployment successful.');
           } else {
-            logger.error('Deployment failed:');
+            Logger.error('CLI', 'Deployment failed:');
             if(Array.isArray(result.errors)) {
-              result.errors.forEach(error => logger.error(error));
+              result.errors.forEach((err: any) => Logger.error('CLI', String(err)));
             } else {
-              logger.error(result.errors);
+              Logger.error('CLI', String(result.errors));
             }
           }
         }
       } else {
-        logger.info('Flow does not require bulkification. No Apex class generated.');
+        Logger.info('CLI', 'Flow does not require bulkification. No Apex class generated.');
       }
     } catch (error) {
-      logger.error(`An error occurred: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      Logger.error('CLI', `An error occurred: ${errorMessage}`);
       process.exit(1);
     }
   });
