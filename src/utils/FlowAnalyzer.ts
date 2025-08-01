@@ -20,22 +20,22 @@ import {
 } from '../types';
 
 export class FlowAnalyzer {
-  private securityAnalyzer = new SecurityAnalyzer();
-  private orgMetadataFetcher = new OrgMetadataFetcher();
-  
   constructor(
     private connection: Connection,
     private schemaManager: SchemaManager,
     private subflowManager: SubflowManager,
+    private securityAnalyzer: SecurityAnalyzer,
+    private orgMetadataFetcher: OrgMetadataFetcher,
     private getFlowXml?: (flowName: string) => string | undefined
   ) {}
 
-  async analyzeFlowFromOrg(flowName: string, targetOrg?: string): Promise<ComprehensiveFlowAnalysis> {
-    const flowMetadata = await this.orgMetadataFetcher.fetchFlowFromOrg(flowName, targetOrg);
+  async analyzeFlowFromOrg(flowName: string): Promise<ComprehensiveFlowAnalysis> {
+    const flowMetadata = await this.orgMetadataFetcher.fetchFlowFromOrg(flowName);
     return this.analyzeFlowComprehensive(flowMetadata);
   }
 
   async analyzeFlowComprehensive(flowMetadata: { Metadata: FlowMetadata; definition: { DeveloperName: string; ProcessType: string; }}): Promise<ComprehensiveFlowAnalysis> {
+    console.time('FlowAnalysis');
     Logger.info('FlowAnalyzer', 'Starting flow analysis');
     Logger.debug('FlowAnalyzer', 'Flow metadata received', flowMetadata);
 
@@ -75,7 +75,8 @@ export class FlowAnalyzer {
       await this.parseAllElements(metadata, analysis);
 
       Logger.info('FlowAnalyzer', 'Calculating metrics');
-      MetricsCalculator.calculateMetrics(fromXML(toXML(metadata)));
+      const metrics = MetricsCalculator.calculateMetrics(fromXML(toXML(metadata)));
+      analysis.loops = metrics.loops;
 
       Logger.info('FlowAnalyzer', 'Generating recommendations');
       RecommendationGenerator.generateRecommendations(analysis);
@@ -121,6 +122,7 @@ export class FlowAnalyzer {
       throw error;
     }
     
+    console.timeEnd('FlowAnalysis');
     return analysis;
   }
 
