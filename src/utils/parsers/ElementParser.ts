@@ -91,8 +91,8 @@ export class ElementParser {
         if (loop.name && loop.connector) {
           const connectors = Array.isArray(loop.connector) ? loop.connector : [loop.connector];
           for (const connector of connectors) {
-            if (connector.targetreference) {
-              const target = connector.targetreference[0];
+            if (connector.targetReference) {
+              const target = connector.targetReference[0];
               loopContext.set(target, loop.name[0]);
             }
           }
