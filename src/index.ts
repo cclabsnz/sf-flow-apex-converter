@@ -101,11 +101,27 @@ program
 
       const analysis = await flowAnalyzer.analyzeFlowComprehensive(wrappedMetadata);
 
+      // Import FlowOutputFormatter at the top
+      const FlowOutputFormatter = require('./utils/output/FlowOutputFormatter.js').FlowOutputFormatter;
+      const formatter = new FlowOutputFormatter();
+
+      // Write detailed analysis to file
       if (options.verbose) {
-        Logger.info('CLI', '--- Flow Analysis ---');
-        Logger.info('CLI', JSON.stringify(analysis, null, 2));
-        Logger.info('CLI', '---------------------');
+        const analysisFile = path.join(process.cwd(), 'flow-analysis-details.json');
+        fs.writeFileSync(analysisFile, JSON.stringify(analysis, null, 2));
+        Logger.info('CLI', `Detailed analysis written to ${analysisFile}`);
       }
+
+      // Display formatted analysis summary
+      Logger.info('CLI', '\n=== Flow Analysis ===');
+      Logger.info('CLI', formatter.formatBasicAnalysis(analysis));
+      
+      if (analysis.loops?.length > 0) {
+        formatter.formatLoopAnalysis(analysis).forEach(line => Logger.info('CLI', line));
+      }
+      
+      formatter.formatRecommendations(analysis).forEach(line => Logger.info('CLI', line));
+      Logger.info('CLI', '\n===================');
 
       if (analysis.recommendations.length > 0) {
         Logger.info('CLI', 'Bulkification is required. Generating Apex class...');

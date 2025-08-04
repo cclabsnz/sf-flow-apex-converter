@@ -14,7 +14,9 @@ export class SubflowAnalyzer {
     flowName: string = 'Unknown',
     loopInfo?: { isInLoop: boolean; loopContext: string }
   ): Promise<SubflowAnalysis> {
-    Logger.info('SubflowAnalyzer', `Analyzing flow ${flowName} version ${metadata._flowVersion.version}`, {
+    Logger.info('SubflowAnalyzer', `Analyzing flow ${flowName} version ${metadata._flowVersion.version}`);
+    Logger.debug('SubflowAnalyzer', 'Flow metadata:', {
+      version: metadata._flowVersion.version,
       status: metadata._flowVersion.status,
       lastModified: metadata._flowVersion.lastModified
     });
