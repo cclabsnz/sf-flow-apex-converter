@@ -172,7 +172,9 @@ export class FlowAnalyzer {
               const subflowDetails = {
                 name: subflowName,
                 inputMappings: element.inputAssignments || [],
-                outputMappings: element.outputAssignments || []
+                outputMappings: element.outputAssignments || [],
+                isInLoop: flowElement.isInLoop,
+                loopName: flowElement.loopContext || 'N/A'
               };
               Logger.info('FlowAnalyzer', `Found subflow: ${JSON.stringify(subflowDetails, null, 2)}`);
               if (subflowName) {
