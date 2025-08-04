@@ -110,7 +110,7 @@ export class ElementParser {
         if (loop.name && loop.connector) {
           const loopName = Array.isArray(loop.name) ? loop.name[0] : loop.name;
           const connectors = Array.isArray(loop.connector) ? loop.connector : [loop.connector];
-          connectors.forEach(connector => processConnector(connector, loopName));
+          connectors.forEach((connector: any) => processConnector(connector, loopName));
         }
       }
     }
