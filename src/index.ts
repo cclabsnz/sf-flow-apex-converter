@@ -26,8 +26,8 @@ program
   .version(packageJson.version)
   .arguments('<flow-path-or-name>')
   .option('--from-org', 'Fetch flow directly from a connected org')
-  .option('--verbose', 'Write detailed analysis to file')
-  .option('--show-logs', 'Show logs in console (default: logs written to file only)')
+  .option('--verbose', 'Write detailed analysis to separate files')
+  .option('--show-logs', 'Show debug logs in console (detailed progress messages)')
   .option('--deploy', 'Deploy generated Apex class to the org')
   .option('--test-only', 'Validate deployment without deploying')
   .option('--target-org <username>', 'Specify the target org (alias or username)')
@@ -37,13 +37,11 @@ program
     // Setup logger
     Logger.setLogLevel(options.logLevel?.toUpperCase() as LogLevel || LogLevel.INFO);
     Logger.enableLogs(!options.quiet);
+    // Only enable console logging for detailed logs when --show-logs is used
     Logger.enableConsoleOutput(options.showLogs || false);
     
-    if (options.showLogs) {
-      console.log('Console logging is enabled. All logs will be shown in console.');
-    } else {
-      console.log('Console logging is disabled. Logs are being written to files only.');
-      console.log('Use --show-logs to enable console logging.');
+    if (options.showLogs && options.verbose) {
+      console.log('Debug logging will be shown in console.');
     }
 
     try {
@@ -121,23 +119,24 @@ program
       }
 
       // Display formatted analysis summary
-      Logger.info('CLI', '\n=== Flow Analysis ===');
-      Logger.info('CLI', formatter.formatBasicAnalysis(analysis));
+      // Always show the analysis summary on console
+      console.log('\n=== Flow Analysis ===');
+      console.log(formatter.formatBasicAnalysis(analysis));
       
       if (analysis.loops?.length > 0) {
-formatter.formatLoopAnalysis(analysis).forEach((line: string) => Logger.info('CLI', line));
+formatter.formatLoopAnalysis(analysis).forEach((line: string) => console.log(line));
       }
       
-formatter.formatRecommendations(analysis).forEach((line: string) => Logger.info('CLI', line));
-      Logger.info('CLI', '\n===================');
+formatter.formatRecommendations(analysis).forEach((line: string) => console.log(line));
+console.log('\n===================');
 
       if (analysis.recommendations.length > 0) {
-        Logger.info('CLI', 'Bulkification is required. Generating Apex class...');
+        console.log('\nBulkification is required. Generating Apex class...');
         const apexClass = ApexGenerator.generateApex(analysis);
 
-        Logger.info('CLI', '--- Generated Apex Class ---');
-        Logger.info('CLI', apexClass);
-        Logger.info('CLI', '--------------------------');
+        console.log('\n--- Generated Apex Class ---');
+        console.log(apexClass);
+        console.log('--------------------------');
 
         if (options.deploy || options.testOnly) {
           if (!conn) {
@@ -151,18 +150,18 @@ formatter.formatRecommendations(analysis).forEach((line: string) => Logger.info(
           const result = await ApexGenerator.deployApex(analysis, options.testOnly, options.targetOrg, conn);
 
           if(result.success) {
-            Logger.info('CLI', 'Deployment successful.');
+            console.log('Deployment successful.');
           } else {
-            Logger.error('CLI', 'Deployment failed:');
+            console.error('Deployment failed:');
             if(Array.isArray(result.errors)) {
-              result.errors.forEach((err: any) => Logger.error('CLI', String(err)));
+              result.errors.forEach((err: any) => console.error(String(err)));
             } else {
               Logger.error('CLI', String(result.errors));
             }
           }
         }
       } else {
-        Logger.info('CLI', 'Flow does not require bulkification. No Apex class generated.');
+        console.log('Flow does not require bulkification. No Apex class generated.');
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
