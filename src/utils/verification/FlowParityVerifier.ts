@@ -1,4 +1,6 @@
-import { FlowMetadata, FlowElement, FlowElementType } from '../interfaces/types';
+import { FlowMetadata, FlowElement, FlowElementType } from '../../types/elements';
+import { FlowNode } from '../../types/analysis';
+import { ApexClassStructure, ApexMethod, ApexInnerClass } from '../../types/apex';
 import { StringBuilder } from './utils/StringBuilder';
 
 export interface FlowTestCase {
@@ -20,9 +22,11 @@ export interface FlowExecutionPath {
 }
 
 export class FlowParityVerifier {
-  private testCases: FlowTestCase[] = [];
+private testCases: FlowTestCase[] = [];
   private executionPaths: FlowExecutionPath[] = [];
   private stateTransitions: Map<string, Set<string>> = new Map();
+  private subflowsInLoop: Set<string> = new Set();
+  private soqlInLoop: Map<string, number> = new Map();
   
   constructor(private flowMetadata: FlowMetadata) {
     this.analyzeFlow();
@@ -42,11 +46,14 @@ export class FlowParityVerifier {
   private buildExecutionGraph() {
     const graph = new Map<string, FlowElement[]>();
     const visited = new Set<string>();
+    this.subflowsInLoop.clear();
+    this.soqlInLoop.clear();
     
     // Start from each start element
-    const startElements = this.flowMetadata.elements.filter(e => 
-      e.type === 'START' || e.type === 'TRIGGER'
-    );
+    const startElements = Array.isArray(this.flowMetadata.elements) ?
+      this.flowMetadata.elements.filter(e => 
+        e.type === FlowElementType.START || e.type === FlowElementType.TRIGGER
+      ) : [];
 
     for (const start of startElements) {
       this.traverseFlow(start, graph, visited, []);
@@ -57,7 +64,8 @@ export class FlowParityVerifier {
     element: FlowElement,
     graph: Map<string, FlowElement[]>,
     visited: Set<string>,
-    currentPath: FlowElement[]
+    currentPath: FlowElement[],
+    inLoop: boolean = false
   ) {
     if (visited.has(element.id)) {
       // We've found a cycle, store the path
@@ -73,6 +81,17 @@ export class FlowParityVerifier {
     visited.add(element.id);
     currentPath.push(element);
 
+    // Track subflows and SOQL in loops
+    if (inLoop || element.type === FlowElementType.LOOP) {
+      if (element.type === FlowElementType.SUBFLOW) {
+        this.subflowsInLoop.add(element.flowName || 'Unknown Subflow');
+      }
+      if (element.type === FlowElementType.RECORD_LOOKUP) {
+        const queryKey = `${element.object || 'Unknown'}: ${element.conditions?.length || 0} conditions`;
+        this.soqlInLoop.set(queryKey, (this.soqlInLoop.get(queryKey) || 0) + 1);
+      }
+    }
+
     // Get next elements based on connectors
     const nextElements = this.getNextElements(element);
     
@@ -86,7 +105,13 @@ export class FlowParityVerifier {
       });
     } else {
       for (const next of nextElements) {
-        this.traverseFlow(next, graph, new Set(visited), [...currentPath]);
+        this.traverseFlow(
+          next,
+          graph,
+          new Set(visited),
+          [...currentPath],
+          inLoop || element.type === FlowElementType.LOOP
+        );
       }
     }
   }
@@ -117,7 +142,7 @@ export class FlowParityVerifier {
 
     // Determine expected outputs
     for (const element of path.elements) {
-      if (element.type === 'ASSIGNMENT') {
+      if (element.type === FlowElementType.ASSIGNMENT) {
         outputs[element.outputReference] = this.evaluateAssignment(element, inputs);
       }
     }
@@ -145,6 +170,39 @@ export class FlowParityVerifier {
         previousState = currentState;
       }
     }
+  }
+
+  generateAnalysisSummary(): string {
+    const summary = new StringBuilder();
+
+    // Add subflows in loops section
+    if (this.subflowsInLoop.size > 0) {
+      summary.appendLine('\nSubflows Called in Loops:');
+      Array.from(this.subflowsInLoop).forEach(subflow => {
+        summary.appendLine(`  - ${subflow}`);
+      });
+    }
+
+    // Add SOQL in loops section
+    if (this.soqlInLoop.size > 0) {
+      summary.appendLine('\nSOQL Queries in Loops:');
+      Array.from(this.soqlInLoop.entries()).forEach(([query, count]) => {
+        summary.appendLine(`  - ${query} (called ${count} times)`);
+      });
+    }
+
+    // Add performance recommendations if needed
+    if (this.subflowsInLoop.size > 0 || this.soqlInLoop.size > 0) {
+      summary.appendLine('\nPerformance Recommendations:');
+      if (this.subflowsInLoop.size > 0) {
+        summary.appendLine('  - Consider bulkifying subflow calls to avoid governor limits');
+      }
+      if (this.soqlInLoop.size > 0) {
+        summary.appendLine('  - Bulkify SOQL queries by collecting IDs and using IN clauses');
+      }
+    }
+
+    return summary.toString();
   }
 
   generateApexClass(): string {
@@ -243,7 +301,7 @@ export class FlowParityVerifier {
   // Helper methods...
   private extractConditions(path: FlowElement[]): string[] {
     return path
-      .filter(e => e.type === 'DECISION')
+      .filter(e => e.type === FlowElementType.DECISION)
       .map(e => e.conditions)
       .flat();
   }
@@ -263,11 +321,168 @@ export class FlowParityVerifier {
     return variables;
   }
 
-  private extractDMLOperations(path: FlowElement[]): Set<string> {
+private extractDMLOperations(path: FlowElement[]): Set<string> {
     return new Set(
       path
-        .filter(e => ['RECORD_CREATE', 'RECORD_UPDATE', 'RECORD_DELETE'].includes(e.type))
+        .filter(e => [FlowElementType.RECORD_CREATE, FlowElementType.RECORD_UPDATE, FlowElementType.RECORD_DELETE].includes(e.type))
         .map(e => `${e.type}_${e.object}`)
     );
+  }
+
+  private getNextElements(element: FlowElement): FlowElement[] {
+    const nextElements: FlowElement[] = [];
+    if (!element.connectors) return nextElements;
+
+    element.connectors.forEach(connector => {
+      const targetElement = this.findElementByRef(connector.targetReference);
+      if (targetElement) nextElements.push(targetElement);
+    });
+
+    return nextElements;
+  }
+
+  private findElementByRef(reference: string): FlowElement | undefined {
+    return Array.isArray(this.flowMetadata.elements) ?
+      this.flowMetadata.elements.find(e => e.name === reference) :
+      undefined;
+  }
+
+  private determineElementState(element: FlowElement): string {
+    switch (element.type) {
+      case FlowElementType.DECISION:
+        return 'DECISION_STATE';
+      case FlowElementType.ASSIGNMENT:
+        return 'ASSIGNMENT_STATE';
+      case FlowElementType.RECORD_CREATE:
+      case FlowElementType.RECORD_UPDATE:
+      case FlowElementType.RECORD_DELETE:
+        return 'DML_STATE';
+      case FlowElementType.LOOP:
+        return 'LOOP_STATE';
+      case FlowElementType.SUBFLOW:
+        return 'SUBFLOW_STATE';
+      default:
+        return 'PROCESSING_STATE';
+    }
+  }
+
+  private generatePathSignature(path: FlowExecutionPath): string {
+    return path.elements
+      .map(e => e.name)
+      .join('_')
+      .replace(/[^a-zA-Z0-9]/g, '_');
+  }
+
+  private analyzeConditionRequirements(condition: any): Record<string, any> {
+    // Implement condition analysis logic
+    return {};
+  }
+
+  private analyzeDMLRequirements(dml: string): any {
+    // Implement DML requirements analysis
+    return {
+      operation: dml.split('_')[1],
+      object: dml.split('_')[2],
+      records: []
+    };
+  }
+
+  private evaluateAssignment(element: FlowElement, inputs: Record<string, any>): any {
+    // Implement assignment evaluation logic
+    return null;
+  }
+
+  private hasSharedSetup(): boolean {
+    // Check if there are shared setup requirements across test cases
+    return this.testCases.some(tc => tc.expectedDML.length > 0);
+  }
+
+  private generateStateEnum(): string {
+    const states = Array.from(this.stateTransitions.keys());
+    const enumLines = states.map(state => `        ${state},`);
+    return `    public enum FlowState {
+${enumLines.join('\n')}
+    }`;
+  }
+
+  private generateWrapperClasses(): string {
+    return `
+    public class FlowInput {
+        // Add input fields
+    }
+
+    public class FlowOutput {
+        // Add output fields
+    }`;
+  }
+
+  private generateExecuteMethod(): string {
+    return `
+    public FlowOutput execute(FlowInput input) {
+        // Validate input
+        validateInput(input);
+
+        // Initialize state
+        FlowState currentState = FlowState.START;
+        FlowOutput output = new FlowOutput();
+
+        // Execute state machine
+        while (currentState != FlowState.END) {
+            currentState = processState(currentState, input, output);
+        }
+
+        return output;
+    }`;
+  }
+
+  private generateStateHandler(state: string): string {
+    return `
+    private FlowState handle${state}(FlowInput input, FlowOutput output) {
+        // Add state handling logic
+        return FlowState.END;
+    }`;
+  }
+
+  private generateValidationMethods(): string {
+    return `
+    private void validateInput(FlowInput input) {
+        if (input == null) {
+            throw new FlowException('Input cannot be null');
+        }
+        // Add input validation
+    }`;
+  }
+
+  private generateTestSetup(): string {
+    return `
+    @TestSetup
+    static void setup() {
+        // Add shared test setup
+    }`;
+  }
+
+  private generateTestDataSetup(testCase: FlowTestCase): string {
+    // Generate test data setup code
+    return '';
+  }
+
+  private generateDMLAssertions(dmlOps: any[]): string {
+    return dmlOps.map(op => `
+        System.assert([SELECT Id FROM ${op.object} LIMIT 1].size() > 0,
+            'Expected ${op.operation} operation on ${op.object}');`).join('\n');
+  }
+
+  private generateNegativeTests(): string {
+    return `
+    @isTest
+    static void testNullInput() {
+        FlowInput input = null;
+        try {
+            new Flow().execute(input);
+            System.assert(false, 'Expected exception for null input');
+        } catch (Exception e) {
+            System.assert(e.getMessage().contains('Input cannot be null'));
+        }
+    }`;
   }
 }

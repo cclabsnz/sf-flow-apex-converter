@@ -1,4 +1,5 @@
-import { FlowMetadata, FlowElement, FlowElementType } from '../interfaces/types';
+import { FlowMetadata, FlowElement, FlowElementType } from '../../types/elements';
+import { FlowNode } from '../../types/analysis';
 import { FlowGraph, FlowTestScenario, FlowTestSetup, SObjectSetup } from './types';
 import { FlowGraphAnalyzer } from './FlowGraphAnalyzer';
 
