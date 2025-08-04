@@ -9,17 +9,18 @@ export interface FlowAnalysisBase {
   soqlQueries: number;
   bulkificationScore: number;
   elements: Map<string, FlowElement>;
-  recommendations: { shouldSplit: boolean; reason: string; suggestedClasses: string[]; }[];
+  recommendations: Array<{ shouldSplit: boolean; reason: string; suggestedClasses: Array<string>; }>;
   apiVersion: string;
-  subflows: SubflowAnalysis[];
+  subflows: Array<SubflowAnalysis>;
   operationSummary: OperationSummary;
   shouldBulkify?: boolean;
   bulkificationReason?: string;
-  loops: LoopMetrics[];
+  loops: Array<LoopMetrics>;
   loopContexts: Map<string, LoopContext>;
 }
 
 export interface ComprehensiveFlowAnalysis extends FlowAnalysisBase {
+  name: string;
   objectDependencies: Set<string>;
   securityContext: SecurityContext;
 }

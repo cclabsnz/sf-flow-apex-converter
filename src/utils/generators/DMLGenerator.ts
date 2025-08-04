@@ -6,9 +6,9 @@ export class DMLGenerator {
     element: FlowElement,
     generateOperationKey: (type: string, objectType?: string, fields?: string[], conditions?: string[], operation?: string[]) => string
   ): { key: string; operation: DMLOperation } | undefined {
-    const objectType = element.properties.object as string;
+    const objectType = element.properties?.object as string || 'Unknown';
     const operation = element.type.toString();
-    const fields = (element.properties.fields as string[]) || [];
+    const fields = (element.properties?.fields as string[]) || [];
 
     const key = generateOperationKey('DML', objectType, fields, [], [operation]);
     

@@ -28,20 +28,7 @@ export interface FlowElementBase {
   loopContext?: string;
 }
 
-export interface FlowElement extends FlowElementBase {
-  id: string;
-  name: string;
-  type: FlowElementType;
-  object?: string;
-  flowName?: string;
-  conditions?: any[];
-  properties?: Record<string, unknown>;
-  connectors?: FlowConnector[];
-  inputReferences?: string[];
-  outputReference?: string;
-  isInLoop?: boolean;
-  loopContext?: string;
-}
+export interface FlowElement extends FlowElementBase {}
 
 export interface FlowConnector {
   targetReference: string;

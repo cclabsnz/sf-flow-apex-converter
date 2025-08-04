@@ -1,14 +1,5 @@
 import { FlowElement, FlowElements, FlowVersion } from './elements';
 
-export interface ComprehensiveFlowAnalysis {
-  name: string;
-  elements: FlowElement[];
-  version?: string;
-  processType?: string;
-  status?: string;
-  lastModified?: string;
-}
-
 export interface FlowNode {
   id: string;
   type: string;
@@ -51,8 +42,12 @@ export interface FlowAnalysisBase {
 }
 
 export interface ComprehensiveFlowAnalysis extends FlowAnalysisBase {
+  name: string;
   objectDependencies: Set<string>;
   securityContext: SecurityContext;
+  version?: FlowVersion;
+  status?: string;
+  lastModified?: string;
 }
 
 export interface SubflowAnalysis extends FlowAnalysisBase {

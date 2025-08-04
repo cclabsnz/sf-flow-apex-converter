@@ -11,7 +11,9 @@ export class FlowTestGenerator {
   }
 
   public generateTestClass(): string {
-    const className = this.flowMetadata.name.replace(/[^a-zA-Z0-9]/g, '_');
+    const className = Array.isArray(this.flowMetadata.name)
+      ? this.flowMetadata.name[0]?.replace(/[^a-zA-Z0-9]/g, '_') || 'UnknownFlow'
+      : (this.flowMetadata.name || 'UnknownFlow').toString().replace(/[^a-zA-Z0-9]/g, '_');
     const scenarios = this.generateTestScenarios();
     
     let testClass = `@isTest\nprivate class ${className}Test {\n`;
@@ -245,6 +247,10 @@ export class FlowTestGenerator {
   }
 
   private generateTestMethod(scenario: FlowTestScenario): string {
+    const className = Array.isArray(this.flowMetadata.name)
+      ? this.flowMetadata.name[0]?.replace(/[^a-zA-Z0-9]/g, '_') || 'UnknownFlow'
+      : (this.flowMetadata.name || 'UnknownFlow').toString().replace(/[^a-zA-Z0-9]/g, '_');
+
     return `
     @isTest
     static void ${scenario.name}() {
@@ -256,7 +262,7 @@ export class FlowTestGenerator {
         
         // Execute flow
         Test.startTest();
-        ${this.flowMetadata.name} flow = new ${this.flowMetadata.name}();
+        ${className} flow = new ${className}();
         Map<String, Object> result = flow.execute(inputs);
         Test.stopTest();
         
@@ -309,13 +315,17 @@ export class FlowTestGenerator {
   }
 
   private generateNegativeTests(): string {
+    const className = Array.isArray(this.flowMetadata.name)
+      ? this.flowMetadata.name[0]?.replace(/[^a-zA-Z0-9]/g, '_') || 'UnknownFlow'
+      : (this.flowMetadata.name || 'UnknownFlow').toString().replace(/[^a-zA-Z0-9]/g, '_');
+
     let tests = '\n    // Negative test cases\n';
     
     // Test null inputs
     tests += `
     @isTest
     static void testNullInputs() {
-        ${this.flowMetadata.name} flow = new ${this.flowMetadata.name}();
+        ${className} flow = new ${className}();
         try {
             flow.execute(null);
             System.assert(false, 'Expected exception for null inputs');
@@ -330,7 +340,7 @@ export class FlowTestGenerator {
     tests += `
     @isTest
     static void testInvalidInputs() {
-        ${this.flowMetadata.name} flow = new ${this.flowMetadata.name}();
+        ${className} flow = new ${className}();
         Map<String, Object> invalidInputs = new Map<String, Object>{
             'InvalidField' => 'InvalidValue'
         };

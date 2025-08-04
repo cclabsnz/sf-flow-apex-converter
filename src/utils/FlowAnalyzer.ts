@@ -46,6 +46,7 @@ export class FlowAnalyzer {
     }
     
     const analysis: ComprehensiveFlowAnalysis = {
+      name: flowMetadata.definition.DeveloperName,
       flowName: flowMetadata.definition.DeveloperName,
       processType: flowMetadata.definition.ProcessType || 'Flow',
       totalElements: 0,

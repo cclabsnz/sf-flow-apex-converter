@@ -1,21 +1,29 @@
 export enum FlowElementType {
+  START = 'start',
+  TRIGGER = 'trigger',
+  ASSIGNMENT = 'assignments',
+  DECISION = 'decisions',
   RECORD_CREATE = 'recordCreates',
   RECORD_UPDATE = 'recordUpdates',
   RECORD_DELETE = 'recordDeletes',
   RECORD_LOOKUP = 'recordLookups',
   RECORD_ROLLBACK = 'recordRollbacks',
-  ASSIGNMENT = 'assignments',
-  DECISION = 'decisions',
   LOOP = 'loops',
   SUBFLOW = 'subflows',
   SCREEN = 'screens'
 }
 
 export interface FlowElement {
-  type: FlowElementType;
+  id: string;
   name: string;
-  properties: Record<string, unknown>;
-  connectors: FlowConnector[];
+  type: FlowElementType;
+  object?: string;
+  flowName?: string;
+  conditions?: any[];
+  properties?: Record<string, unknown>;
+  connectors?: FlowConnector[];
+  inputReferences?: string[];
+  outputReference?: string;
   isInLoop?: boolean;
   loopContext?: string;
 }
