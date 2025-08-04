@@ -17,10 +17,13 @@ import { OrgMetadataFetcher } from './utils/fetchers/OrgMetadataFetcher.js';
 
 const program = new Command();
 
+// Read version from package.json
+const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
+
 program
   .name('sf-flow-apex-converter')
   .description('A CLI tool to convert Salesforce Flows to bulkified Apex classes')
-  .version('1.0.42')
+  .version(packageJson.version)
   .arguments('<flow-path-or-name>')
   .option('--from-org', 'Fetch flow directly from a connected org')
   .option('--verbose', 'Show detailed analysis and progress')
