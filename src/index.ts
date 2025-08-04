@@ -23,8 +23,12 @@ const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.
 program
   .name('sf-flow-apex-converter')
   .description('A CLI tool to convert Salesforce Flows to bulkified Apex classes')
-  .version(packageJson.version)
-  .arguments('<flow-path-or-name>')
+  .version(packageJson.version);
+
+program
+  .command('analyze')
+  .argument('<flow-path-or-name>', 'Path to the flow XML file or flow name in org')
+  .option('-d, --debug', 'Enable debug logging')
   .option('--from-org', 'Fetch flow directly from a connected org')
   .option('--verbose', 'Write detailed analysis to separate files')
   .option('--show-logs', 'Show debug logs in console (detailed progress messages)')
@@ -35,10 +39,10 @@ program
   .option('--quiet', 'Disable all logging')
   .action(async (flowPathOrName, options) => {
     // Setup logger
-    Logger.setLogLevel(options.logLevel?.toUpperCase() as LogLevel || LogLevel.INFO);
+    Logger.setLogLevel(options.debug ? LogLevel.DEBUG : (options.logLevel?.toUpperCase() as LogLevel || LogLevel.INFO));
     Logger.enableLogs(!options.quiet);
-    // Only enable console logging for detailed logs when --show-logs is used
-    Logger.enableConsoleOutput(options.showLogs || false);
+    // Enable console logging for debug or show-logs
+    Logger.enableConsoleOutput(options.debug || options.showLogs || false);
     
     if (options.showLogs && options.verbose) {
       console.log('Debug logging will be shown in console.');
@@ -164,8 +168,13 @@ console.log('\n===================');
         console.log('Flow does not require bulkification. No Apex class generated.');
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      Logger.error('CLI', `An error occurred: ${errorMessage}`);
+      Logger.error('CLI', 'An error occurred:');
+      if (error instanceof Error) {
+        Logger.error('CLI', `Message: ${error.message}`);
+        Logger.error('CLI', `Stack: ${error.stack}`);
+      } else {
+        Logger.error('CLI', `Error: ${String(error)}`);
+      }
       process.exit(1);
     }
   });

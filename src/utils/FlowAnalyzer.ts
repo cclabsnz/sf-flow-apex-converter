@@ -165,7 +165,11 @@ export class FlowAnalyzer {
               analysis.objectDependencies.add(element.object[0]);
             }
 
-            if (elementType === FlowElementType.SUBFLOW) {
+            if (elementType === FlowElementType.SUBFLOW || elementType === FlowElementType.ACTION_CALL) {
+              Logger.debug('FlowAnalyzer', `Processing ${elementType}: ${JSON.stringify(element.name)}`);
+              Logger.debug('FlowAnalyzer', `Flow element details: ${JSON.stringify(flowElement)}`);
+              Logger.debug('FlowAnalyzer', `Loop context: ${JSON.stringify(loopContext.get(flowElement.name))}`);
+              Logger.debug('FlowAnalyzer', `Current element keys: ${Object.keys(element).join(', ')}`);
               const subflowName = Array.isArray(element.flowname) ? element.flowname[0] : undefined;
               const subflowDetails = {
                 name: subflowName,
