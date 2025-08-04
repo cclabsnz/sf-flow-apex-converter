@@ -81,42 +81,39 @@ export class FlowAnalyzer {
       Logger.info('FlowAnalyzer', 'Generating recommendations');
       RecommendationGenerator.generateRecommendations(analysis);
 
+      // Log detailed analysis to file
+      Logger.debug('FlowAnalyzer', 'Complete analysis details', analysis);
+      
+      // Create and log a concise summary
       const summary = {
         flow: {
           name: analysis.flowName,
           type: analysis.processType,
-          totalElements: analysis.totalElements,
-          bulkificationScore: analysis.bulkificationScore,
-          apiVersion: analysis.apiVersion
+          elements: analysis.totalElements,
+          score: analysis.bulkificationScore
         },
         operations: {
           dml: {
             total: analysis.operationSummary.totalOperations.dml.total,
-            inLoop: analysis.operationSummary.totalOperations.dml.inLoop,
-            sources: analysis.operationSummary.dmlOperations.map(op => ({
-              flow: op.sourceFlow,
-              count: op.count,
-              inLoop: op.inLoop,
-              locations: op.sources
-            }))
+            inLoop: analysis.operationSummary.totalOperations.dml.inLoop
           },
           soql: {
             total: analysis.operationSummary.totalOperations.soql.total,
-            inLoop: analysis.operationSummary.totalOperations.soql.inLoop,
-            sources: analysis.operationSummary.soqlQueries.map(op => ({
-              flow: op.sourceFlow,
-              count: op.count,
-              inLoop: op.inLoop,
-              locations: op.sources
-            }))
+            inLoop: analysis.operationSummary.totalOperations.soql.inLoop
           }
         },
-        bulkificationNeeded: analysis.shouldBulkify,
-        reason: analysis.bulkificationReason,
-        recommendations: analysis.recommendations
+        loops: analysis.loops.length,
+        bulkification: analysis.shouldBulkify ? {
+          needed: true,
+          reason: analysis.bulkificationReason
+        } : {
+          needed: false
+        },
+        recommendations: analysis.recommendations.length
       };
 
-      Logger.info('FlowAnalyzer', 'Analysis complete', summary);
+      Logger.info('FlowAnalyzer', `Analysis complete for ${analysis.flowName}`);
+      Logger.info('FlowAnalyzer', 'Summary:', summary);
     } catch (error) {
       Logger.error('FlowAnalyzer', 'Error during flow analysis', error);
       throw error;
