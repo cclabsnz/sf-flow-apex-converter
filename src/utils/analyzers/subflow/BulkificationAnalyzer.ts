@@ -40,12 +40,13 @@ export class BulkificationAnalyzer {
             if (loop.elements) {
               const elements = Array.isArray(loop.elements) ? loop.elements : [loop.elements];
               for (const element of elements) {
-                if ((element as any).actionCall || (Array.isArray((element as any).type) && (element as any).type[0] === 'ActionCall')) {
-                  soqlMessage += ', Apex actions';
-                  break;
-                }
-                if ((element as any).subflow || (Array.isArray((element as any).type) && (element as any).type[0] === 'Subflow')) {
-                  soqlMessage += ', subflows';
+                const elementType = Array.isArray((element as any).type) ? (element as any).type[0] : '';
+                const isActionCall = (element as any).actionCall || elementType === 'ActionCall' || elementType === 'actionCalls';
+                const isSubflow = (element as any).subflow || elementType === 'Subflow' || elementType === 'subflows';
+
+                if (isActionCall || isSubflow) {
+                  soqlMessage += isActionCall ? ', Apex actions' : ', subflows';
+                  reasons.push(`Contains ${isActionCall ? 'action calls' : 'subflows'} inside loop`);
                   break;
                 }
               }
