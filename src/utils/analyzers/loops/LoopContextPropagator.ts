@@ -1,0 +1,104 @@
+import { FlowBaseType, FlowMetadata, LoopContext } from '../../../types';
+import { Logger } from '../../Logger.js';
+
+export class LoopContextPropagator {
+  private loopContexts = new Map<string, LoopContext>();
+  private elementConnections = new Map<string, Set<string>>();
+  private processedElements = new Set<string>();
+
+  propagateLoopContexts(metadata: FlowMetadata): Map<string, LoopContext> {
+    this.buildElementConnections(metadata);
+    this.initializeLoopContexts(metadata);
+    this.propagateContexts();
+    return this.loopContexts;
+  }
+
+  private buildElementConnections(metadata: FlowMetadata): void {
+    this.processElementType(metadata.loops, 'loops');
+    this.processElementType(metadata.decisions, 'decisions');
+    this.processElementType(metadata.assignments, 'assignments');
+    this.processElementType(metadata.recordCreates, 'recordCreates');
+    this.processElementType(metadata.recordUpdates, 'recordUpdates');
+    this.processElementType(metadata.recordDeletes, 'recordDeletes');
+    this.processElementType(metadata.recordLookups, 'recordLookups');
+    this.processElementType(metadata.subflows, 'subflows');
+  }
+
+  private processElementType(elements: FlowBaseType[] | undefined, type: string): void {
+    if (!elements) return;
+
+    for (const element of elements) {
+      const elementName = element.name?.[0];
+      if (!elementName) continue;
+
+      // Get all connector targets for this element
+      const connectors = Array.isArray(element.connector) ? element.connector : [element.connector];
+      const targets = new Set<string>();
+
+      for (const connector of connectors) {
+        if (connector?.targetReference?.[0]) {
+          targets.add(connector.targetReference[0]);
+        }
+      }
+
+      this.elementConnections.set(elementName, targets);
+      Logger.debug('LoopContextPropagator', `Element ${elementName} connects to: ${Array.from(targets).join(', ')}`);
+    }
+  }
+
+  private initializeLoopContexts(metadata: FlowMetadata): void {
+    if (!metadata.loops) return;
+
+    const loops = Array.isArray(metadata.loops) ? metadata.loops : [metadata.loops];
+    
+    for (const loop of loops) {
+      const loopName = loop.name?.[0];
+      if (!loopName) continue;
+
+      const connectors = Array.isArray(loop.connector) ? loop.connector : [loop.connector];
+      for (const connector of connectors) {
+        if (connector?.targetReference?.[0]) {
+          const targetRef = connector.targetReference[0];
+          // Only set loop context if not already set (preserves first loop)
+          if (!this.loopContexts.has(targetRef)) {
+            this.loopContexts.set(targetRef, {
+            isInLoop: true,
+            loopReferenceName: loopName,
+            depth: 1
+          });
+          Logger.debug('LoopContextPropagator', `Initial loop context: ${targetRef} in loop ${loopName}`);
+          }
+        }
+      }
+    }
+  }
+
+  private propagateContexts(): void {
+    let changed = true;
+    while (changed) {
+      changed = false;
+      
+      for (const [element, targets] of this.elementConnections.entries()) {
+        const elementContext = this.loopContexts.get(element);
+        
+        if (elementContext?.isInLoop) {
+          for (const target of targets) {
+            const existingContext = this.loopContexts.get(target);
+            
+            // Only set loop context if element isn't already in a loop
+            // This preserves the first loop that claims an element
+            if (!existingContext) {
+              this.loopContexts.set(target, {
+                isInLoop: true,
+                loopReferenceName: elementContext.loopReferenceName,
+                depth: elementContext.depth
+              });
+              changed = true;
+              Logger.debug('LoopContextPropagator', `Propagated loop context to ${target} from ${element}`);
+            }
+          }
+        }
+      }
+    }
+  }
+}
