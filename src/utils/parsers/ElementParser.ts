@@ -132,7 +132,8 @@ export class ElementParser {
     const elementName = element.name?.[0] || 'Unnamed';
     const elementLoopContext = this.isElementInLoop(elementName, loopContext);
     
-    return {
+    const element = {
+      id: Array.isArray(elementMetadata.name) ? elementMetadata.name[0] : 'unknown',
       type: elementType,
       name: elementName,
       properties: this.parseProperties(element),
@@ -143,6 +144,6 @@ export class ElementParser {
   }
 
   static getTagsForType(elementType: FlowElementType): string[] {
-    return this.typeToTags[elementType] || [elementType.toLowerCase()];
+    return (this.typeToTags as any)[elementType] || [elementType.toLowerCase()];
   }
 }

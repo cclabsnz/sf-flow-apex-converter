@@ -1,6 +1,6 @@
 import { FlowMetadata, FlowElement, FlowElementType } from '../../types/elements';
 import { ApexClassStructure, ApexMethod, ApexInnerClass, ApexProperty } from '../../types/apex';
-import { FlowGraph, FlowState, ApexClassStructure, ApexMethod } from './types';
+import { FlowGraph, FlowState } from './types';
 import { FlowGraphAnalyzer } from './FlowGraphAnalyzer';
 import { FlowTestGenerator } from './FlowTestGenerator';
 
@@ -352,7 +352,7 @@ export class FlowToApexGenerator {
     return outputs;
   }
 
-  private determineApexType(reference: string, node: FlowNode): string {
+  private determineApexType(reference: string, node: any): string {
     // This would need to be implemented based on your metadata format
     return 'Object';
   }

@@ -142,7 +142,7 @@ private testCases: FlowTestCase[] = [];
 
     // Determine expected outputs
     for (const element of path.elements) {
-      if (element.type === FlowElementType.ASSIGNMENT) {
+      if (element.type === FlowElementType.ASSIGNMENT && element.outputReference && element.outputReference in outputs) {
         outputs[element.outputReference] = this.evaluateAssignment(element, inputs);
       }
     }
@@ -206,7 +206,9 @@ private testCases: FlowTestCase[] = [];
   }
 
   generateApexClass(): string {
-    const className = this.flowMetadata.name.replace(/[^a-zA-Z0-9]/g, '_');
+    const className = Array.isArray(this.flowMetadata.name) 
+      ? this.flowMetadata.name[0].replace(/[^a-zA-Z0-9]/g, '_')
+      : (this.flowMetadata.name as string).replace(/[^a-zA-Z0-9]/g, '_');
     const apex = new StringBuilder();
     
     // Generate class header with required annotations
