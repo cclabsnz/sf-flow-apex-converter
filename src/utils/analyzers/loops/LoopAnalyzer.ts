@@ -60,9 +60,9 @@ export class LoopAnalyzer {
         containsSubflows: nestedElements.subflows > 0,
         nestedElements,
         loopVariables: {
-          inputCollection: loop.collectionReference as string || '',
-          currentItem: loop.iterationVariable as string || '',
-          iterationOrder: (loop.iterationOrder as string || 'Asc') as 'Asc' | 'Desc'
+          inputCollection: typeof loop.collectionReference === 'string' ? loop.collectionReference : '',
+          currentItem: typeof loop.iterationVariable === 'string' ? loop.iterationVariable : '',
+          iterationOrder: (typeof loop.iterationOrder === 'string' ? loop.iterationOrder : 'Asc') as 'Asc' | 'Desc'
         }
       };
 
