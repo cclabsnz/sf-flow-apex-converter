@@ -10,7 +10,8 @@ export enum FlowElementType {
   RECORD_ROLLBACK = 'recordRollbacks',
   LOOP = 'loops',
   SUBFLOW = 'subflows',
-  SCREEN = 'screens'
+  SCREEN = 'screens',
+  ACTION_CALL = 'actionCalls'
 }
 
 export interface FlowElement {
