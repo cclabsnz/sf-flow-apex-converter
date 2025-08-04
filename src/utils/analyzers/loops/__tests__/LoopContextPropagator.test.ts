@@ -149,6 +149,55 @@ describe('LoopContextPropagator', () => {
     expect(result.size).toBe(0);
   });
 
+  it('should detect subflows and actions referencing loop variables', () => {
+    const metadata: FlowMetadata = {
+      _flowVersion: defaultFlowVersion,
+      loops: [{
+        name: ['Loop_over_Loans'],
+        collectionReference: ['LoansInPP'],
+        iterationOrder: ['Asc'],
+        nextValueConnector: [{
+          targetReference: ['Is_the_loan_a_Credit_Action']
+        }]
+      }],
+      subflows: [
+        {
+          name: ['Validate_Better_Homes_Topup'],
+          flowName: ['NC_Better_Homes_Topup_Validation'],
+          inputAssignments: [
+            {
+              name: ['LoanId'],
+              value: [{
+                elementReference: ['Loop_over_Loans.Id']
+              }]
+            }
+          ]
+        },
+        {
+          name: ['Validate_Key_Loan_Dates'],
+          flowName: ['Key_Loan_Date_Validation'],
+          inputAssignments: [
+            {
+              name: ['LoanId'],
+              value: [{
+                elementReference: ['Loop_over_Loans.Id']
+              }]
+            }
+          ]
+        }
+      ]
+    };
+
+    const result = propagator.propagateLoopContexts(metadata);
+
+    // Should detect both subflows as being in the loop due to their input references
+    expect(result.get('Validate_Better_Homes_Topup')?.isInLoop).toBe(true);
+    expect(result.get('Validate_Better_Homes_Topup')?.loopReferenceName).toBe('Loop_over_Loans');
+    
+    expect(result.get('Validate_Key_Loan_Dates')?.isInLoop).toBe(true);
+    expect(result.get('Validate_Key_Loan_Dates')?.loopReferenceName).toBe('Loop_over_Loans');
+  });
+
   it('should handle empty or invalid connectors', () => {
     const metadata: FlowMetadata = {
       _flowVersion: defaultFlowVersion,
