@@ -57,8 +57,19 @@ analyze(metadata: FlowMetadata): {
       if (loop.recordLookups) nestedElements.soql += this.countElements(loop.recordLookups);
       if (loop.dynamicChoiceSets) nestedElements.soql += this.countElements(loop.dynamicChoiceSets);
 
-      // Count subflows in loop
+      // Count subflows and action calls in loop
       if (loop.subflows) nestedElements.subflows += this.countElements(loop.subflows);
+      if (loop.actionCalls) nestedElements.subflows += this.countElements(loop.actionCalls);
+      
+      // Also check for action calls in elements array
+      if (loop.elements) {
+        const elements = Array.isArray(loop.elements) ? loop.elements : [loop.elements];
+        for (const element of elements) {
+          if ((element as any).actionCall || (Array.isArray((element as any).type) && (element as any).type[0] === 'ActionCall')) {
+            nestedElements.subflows++;
+          }
+        }
+      }
 
       // Count other elements
       if (loop.assignments) nestedElements.other += this.countElements(loop.assignments);

@@ -42,8 +42,11 @@ export class LoopAnalyzer {
       if (loop.recordLookups) nestedElements.soql += this.countElements(loop.recordLookups);
       if (loop.dynamicChoiceSets) nestedElements.soql += this.countElements(loop.dynamicChoiceSets);
 
-      // Count subflows in loop
+      // Count subflows in loop - check both direct subflows and subflow calls
       if (loop.subflows) nestedElements.subflows += this.countElements(loop.subflows);
+      if (loop.subflow) nestedElements.subflows += this.countElements(loop.subflow);
+      // Also check for subflow elements in the loop's path
+      if (loop.flowName) nestedElements.subflows++;
 
       // Count other elements
       if (loop.assignments) nestedElements.other += this.countElements(loop.assignments);
