@@ -1,4 +1,4 @@
-import { FlowMetadata, FlowElement } from '../interfaces/types';
+import { FlowMetadata, FlowElement, FlowElementType } from '../interfaces/types';
 import { FlowGraph, FlowState, ApexClassStructure, ApexMethod } from './types';
 import { FlowGraphAnalyzer } from './FlowGraphAnalyzer';
 import { FlowTestGenerator } from './FlowTestGenerator';

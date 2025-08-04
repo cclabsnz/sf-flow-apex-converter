@@ -1,3 +1,22 @@
+import { FlowElement } from './elements';
+
+export interface FlowMetadata {
+  name: string;
+  elements: FlowElement[];
+  version?: string;
+  processType?: string;
+  status?: string;
+  lastModified?: string;
+}
+
+export interface FlowNode {
+  id: string;
+  type: string;
+  metadata: any;
+  inputRefs: string[];
+  outputRefs: string[];
+}
+
 import { FlowElement, FlowElements, FlowVersion } from './elements';
 import { SecurityContext } from './security';
 import { LoopMetrics, LoopContext } from './loops';
