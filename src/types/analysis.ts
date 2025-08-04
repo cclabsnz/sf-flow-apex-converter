@@ -1,6 +1,6 @@
-import { FlowElement } from './elements';
+import { FlowElement, FlowElements, FlowVersion } from './elements';
 
-export interface FlowMetadata {
+export interface ComprehensiveFlowAnalysis {
   name: string;
   elements: FlowElement[];
   version?: string;
@@ -17,7 +17,6 @@ export interface FlowNode {
   outputRefs: string[];
 }
 
-import { FlowElement, FlowElements, FlowVersion } from './elements';
 import { SecurityContext } from './security';
 import { LoopMetrics, LoopContext } from './loops';
 

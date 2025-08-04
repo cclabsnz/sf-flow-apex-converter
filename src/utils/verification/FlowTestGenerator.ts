@@ -103,7 +103,7 @@ export class FlowTestGenerator {
       if (node.type === 'DECISION') {
         // Extract decision requirements
         const conditions = node.metadata.conditions || [];
-        conditions.forEach(condition => {
+        conditions.forEach((condition: { name: string; value: any }) => {
           const requiredInputs = this.analyzeConditionRequirements(condition);
           Object.assign(inputs, requiredInputs);
         });
@@ -275,7 +275,7 @@ export class FlowTestGenerator {
         for (Integer i = 0; i < ${sObjectSetup.records.length}; i++) {
             test${sObjectSetup.objectType}s.add(
                 create${sObjectSetup.objectType}(
-                    new Map<String, Object>${JSON.stringify(sObjectSetup.records[i])}
+                    new Map<String, Object>${JSON.stringify(sObjectSetup.records[0])}
                 )
             );
         }

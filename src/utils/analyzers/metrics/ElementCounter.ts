@@ -28,7 +28,8 @@ export class ElementCounter {
         const elementArray = Array.isArray(elements) ? elements : [elements];
         elementArray.forEach((element: { name?: string[] }, index: number) => {
           const elementName = element.name?.[0] || `${type.key}_${index}`;
-          elementMap.set(elementName, {
+        elementMap.set(elementName, {
+            id: elementName,
             type: type.key === 'recordCreates' ? FlowElementType.RECORD_CREATE :
                  type.key === 'recordUpdates' ? FlowElementType.RECORD_UPDATE :
                  type.key === 'recordDeletes' ? FlowElementType.RECORD_DELETE :
