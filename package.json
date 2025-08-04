@@ -1,6 +1,6 @@
 {
   "name": "@cclabsnz/sf-flow-apex-converter",
-  "version": "1.0.61",
+  "version": "1.0.62",
   "description": "CLI tool to convert Salesforce Flows into bulkified Apex classes",
   "main": "dist/index.js",
   "scripts": {
