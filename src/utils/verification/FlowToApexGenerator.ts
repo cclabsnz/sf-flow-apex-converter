@@ -37,7 +37,9 @@ export class FlowToApexGenerator {
   }
 
   private buildClassStructure(): ApexClassStructure {
-    const className = this.flowMetadata.name.replace(/[^a-zA-Z0-9]/g, '_');
+    const className = Array.isArray(this.flowMetadata.name) 
+      ? this.flowMetadata.name[0]?.replace(/[^a-zA-Z0-9]/g, '_') || 'UnknownFlow'
+      : (this.flowMetadata.name || 'UnknownFlow').toString().replace(/[^a-zA-Z0-9]/g, '_');
     
     const structure: ApexClassStructure = {
       className,

@@ -4,7 +4,7 @@ import { SchemaManager } from './SchemaManager.js';
 import { SubflowParser } from './parsers/SubflowParser.js';
 import { SubflowAnalyzer } from './analyzers/SubflowAnalyzer.js';
 import { SubflowAnalysis } from './interfaces/analysis/FlowAnalysis.js';
-import { FlowElement, FlowMetadata } from './interfaces/types.js';
+import { FlowElement, FlowMetadata } from '../types/elements';
 
 export class SubflowManager {
   private subflowCache = new Map<string, SubflowAnalysis>();

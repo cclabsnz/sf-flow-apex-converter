@@ -125,19 +125,19 @@ export class ElementParser {
   }
 
   static parseElement(
-    element: any, 
+    elementMetadata: any, 
     elementType: FlowElementType, 
     loopContext: Map<string, string>
   ): FlowElement {
-    const elementName = element.name?.[0] || 'Unnamed';
+    const elementName = elementMetadata.name?.[0] || 'Unnamed';
     const elementLoopContext = this.isElementInLoop(elementName, loopContext);
     
-    const element = {
+    return {
       id: Array.isArray(elementMetadata.name) ? elementMetadata.name[0] : 'unknown',
       type: elementType,
       name: elementName,
-      properties: this.parseProperties(element),
-      connectors: this.parseConnectors(element),
+      properties: this.parseProperties(elementMetadata),
+      connectors: this.parseConnectors(elementMetadata),
       isInLoop: !!elementLoopContext,
       loopContext: elementLoopContext
     };

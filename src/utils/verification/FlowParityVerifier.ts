@@ -207,8 +207,8 @@ private testCases: FlowTestCase[] = [];
 
   generateApexClass(): string {
     const className = Array.isArray(this.flowMetadata.name) 
-      ? this.flowMetadata.name[0].replace(/[^a-zA-Z0-9]/g, '_')
-      : (this.flowMetadata.name as string).replace(/[^a-zA-Z0-9]/g, '_');
+      ? this.flowMetadata.name[0]?.replace(/[^a-zA-Z0-9]/g, '_') || 'UnknownFlow'
+      : (this.flowMetadata.name || 'UnknownFlow').toString().replace(/[^a-zA-Z0-9]/g, '_');
     const apex = new StringBuilder();
     
     // Generate class header with required annotations
@@ -239,7 +239,9 @@ private testCases: FlowTestCase[] = [];
   }
 
   generateTestClass(): string {
-    const className = this.flowMetadata.name.replace(/[^a-zA-Z0-9]/g, '_');
+    const className = Array.isArray(this.flowMetadata.name)
+      ? this.flowMetadata.name[0]?.replace(/[^a-zA-Z0-9]/g, '_') || 'UnknownFlow'
+      : (this.flowMetadata.name || 'UnknownFlow').toString().replace(/[^a-zA-Z0-9]/g, '_');
     const testClass = new StringBuilder();
     
     testClass.appendLine(`@isTest`);
@@ -273,7 +275,10 @@ private testCases: FlowTestCase[] = [];
     method.appendLine(this.generateTestDataSetup(testCase));
     
     // Execute flow
-    method.appendLine(`${this.flowMetadata.name} flow = new ${this.flowMetadata.name}();`);
+    const flowClassName = Array.isArray(this.flowMetadata.name)
+      ? this.flowMetadata.name[0]?.replace(/[^a-zA-Z0-9]/g, '_') || 'UnknownFlow'
+      : (this.flowMetadata.name || 'UnknownFlow').toString().replace(/[^a-zA-Z0-9]/g, '_');
+    method.appendLine(`${flowClassName} flow = new ${flowClassName}();`);
     method.appendLine(`FlowResult result = flow.execute(input);`);
     
     // Assert expected outputs

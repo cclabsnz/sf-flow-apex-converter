@@ -1,4 +1,4 @@
-import { ComprehensiveFlowAnalysis, FlowElement, FlowElementType } from '../../types';
+import { ComprehensiveFlowAnalysis, FlowElement, FlowElementType, FlowConnector } from '../../types';
 
 export class RecommendationGenerator {
   private static hasNestedOperation(
@@ -17,12 +17,12 @@ export class RecommendationGenerator {
       
       if (operationTypes.includes(currentElement.type)) return true;
       
-      return currentElement.connectors.some(conn => 
+      return (currentElement.connectors || []).some((conn: FlowConnector) => 
         conn.targetReference && checkElement(conn.targetReference)
       );
     };
     
-    return element.connectors.some(conn => 
+    return (element.connectors || []).some((conn: FlowConnector) => 
       conn.targetReference && checkElement(conn.targetReference)
     );
   }

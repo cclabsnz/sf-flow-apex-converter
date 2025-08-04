@@ -8,9 +8,9 @@ export class QueryGenerator {
     generateOperationKey: (type: string, objectType?: string, fields?: string[], conditions?: string[]) => string,
     idVariables: Set<string>
   ): { key: string; operation: QueryOperation } | undefined {
-    const objectType = element.properties.object as string;
-    const fields = (element.properties.fields as string[]) || [];
-    const conditions = (element.properties.conditions as string[]) || [];
+    const objectType = element.properties?.object as string || 'Unknown';
+    const fields = (element.properties?.fields as string[]) || [];
+    const conditions = (element.properties?.conditions as string[]) || [];
 
     const key = generateOperationKey('QUERY', objectType, fields, conditions);
     
@@ -22,8 +22,10 @@ export class QueryGenerator {
       elements: [element]
     };
     
-    if (element.properties.outputReference as string) {
-      idVariables.add(element.properties.outputReference as string);
+    if (element.properties?.outputReference as string) {
+      if (element.properties?.outputReference) {
+        idVariables.add(element.properties.outputReference as string);
+      }
     }
 
     return { key, operation };
