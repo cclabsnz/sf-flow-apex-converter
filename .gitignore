@@ -46,3 +46,7 @@ coverage/
 
 # Claude configuration
 .claude-limits
+
+# Analysis details
+flow-analysis-details.json
+sf-flow-apex-converter-details.json
