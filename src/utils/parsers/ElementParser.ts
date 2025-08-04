@@ -84,18 +84,33 @@ export class ElementParser {
 
   static buildLoopContext(metadata: any): Map<string, string> {
     const loopContext = new Map<string, string>();
+    const processConnector = (connector: any, loopName: string) => {
+      if (connector.targetReference) {
+        const target = Array.isArray(connector.targetReference) ? connector.targetReference[0] : connector.targetReference;
+        loopContext.set(target, loopName);
+        
+        // Recursively follow target elements to mark their targets as in the loop too
+        if (metadata[target.toLowerCase()]) {
+          const targetElement = Array.isArray(metadata[target.toLowerCase()]) 
+            ? metadata[target.toLowerCase()][0] 
+            : metadata[target.toLowerCase()];
+          if (targetElement.connector) {
+            const nextConnectors = Array.isArray(targetElement.connector) 
+              ? targetElement.connector 
+              : [targetElement.connector];
+            nextConnectors.forEach((nextConn: any) => processConnector(nextConn, loopName));
+          }
+        }
+      }
+    };
     
     if (metadata.loops) {
       const loops = Array.isArray(metadata.loops) ? metadata.loops : [metadata.loops];
       for (const loop of loops) {
         if (loop.name && loop.connector) {
+          const loopName = Array.isArray(loop.name) ? loop.name[0] : loop.name;
           const connectors = Array.isArray(loop.connector) ? loop.connector : [loop.connector];
-          for (const connector of connectors) {
-            if (connector.targetReference) {
-              const target = connector.targetReference[0];
-              loopContext.set(target, loop.name[0]);
-            }
-          }
+          connectors.forEach(connector => processConnector(connector, loopName));
         }
       }
     }
