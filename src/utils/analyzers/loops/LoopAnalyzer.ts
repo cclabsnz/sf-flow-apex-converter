@@ -28,6 +28,14 @@ export class LoopAnalyzer {
     for (const loop of loops) {
       const loopName = loop.name?.[0] || 'UnnamedLoop';
       
+      // Debug loop structure
+      Logger.debug('LoopAnalyzer', 'Loop structure:', {
+        name: loopName,
+        collectionReference: loop.collectionReference,
+        iterationVariable: loop.iterationVariable,
+        iterationOrder: loop.iterationOrder
+      });
+      
       // Analyze loop contents
       const nestedElements = {
         dml: 0,
