@@ -4,11 +4,14 @@ import { Logger } from '../../Logger.js';
 export class LoopContextPropagator {
   private loopContexts = new Map<string, LoopContext>();
   private elementConnections = new Map<string, Set<string>>();
+  private elementTypes = new Map<string, string>();
+  private metadata: FlowMetadata | null = null;
   private processedElements = new Set<string>();
 
-  propagateLoopContexts(metadata: FlowMetadata): Map<string, LoopContext> {
-    this.buildElementConnections(metadata);
-    this.initializeLoopContexts(metadata);
+  propagateLoopContexts(flowMetadata: FlowMetadata): Map<string, LoopContext> {
+    this.metadata = flowMetadata;
+    this.buildElementConnections(this.metadata);
+    this.initializeLoopContexts(this.metadata);
     this.propagateContexts();
     return this.loopContexts;
   }
@@ -52,6 +55,7 @@ export class LoopContextPropagator {
       }
 
       this.elementConnections.set(elementName, targets);
+      this.elementTypes.set(elementName, type);
       Logger.debug('LoopContextPropagator', `Element ${elementName} connects to: ${Array.from(targets).join(', ')}`);
     }
   }
@@ -106,11 +110,13 @@ export class LoopContextPropagator {
               });
 
               // Check if this is a subflow with inputs referencing loop variables
-              if (type === 'subflows') {
-                const subflow = elements?.find(e => e.name?.[0] === target);
-                if (subflow?.inputAssignments) {
-                  const inputs = Array.isArray(subflow.inputAssignments) ? subflow.inputAssignments : [subflow.inputAssignments];
-                  for (const input of inputs) {
+              const elementType = this.elementTypes.get(target);
+              if (elementType === 'subflows' && this.metadata) {
+const subflows = this.metadata.subflows || [];
+const elementData = subflows.find((el: FlowBaseType) => el.name?.[0] === target);
+                if (elementData?.inputAssignments) {
+                  const inputs = Array.isArray(elementData.inputAssignments) ? elementData.inputAssignments : [elementData.inputAssignments];
+for (const input of inputs as any[]) {
                     const value = Array.isArray(input.value) ? input.value[0] : input.value;
                     const elementRef = value?.elementReference?.[0];
                     if (elementRef?.startsWith('Loop_over_')) {
