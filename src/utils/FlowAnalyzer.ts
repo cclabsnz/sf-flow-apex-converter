@@ -169,7 +169,12 @@ export class FlowAnalyzer {
 
             if (elementType === FlowElementType.SUBFLOW) {
               const subflowName = Array.isArray(element.flowname) ? element.flowname[0] : undefined;
-              Logger.debug('FlowAnalyzer', `Found subflow reference: ${subflowName}`);
+              const subflowDetails = {
+                name: subflowName,
+                inputMappings: element.inputAssignments || [],
+                outputMappings: element.outputAssignments || []
+              };
+              Logger.info('FlowAnalyzer', `Found subflow: ${JSON.stringify(subflowDetails, null, 2)}`);
               if (subflowName) {
                 try {
                   let subflowXml: string | undefined;
