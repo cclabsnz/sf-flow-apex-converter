@@ -60,9 +60,9 @@ export class LoopAnalyzer {
         containsSubflows: nestedElements.subflows > 0,
         nestedElements,
         loopVariables: {
-          inputCollection: Array.isArray(loop.collectionReference) ? loop.collectionReference[0] : (typeof loop.collectionReference === 'string' ? loop.collectionReference : ''),
-          currentItem: Array.isArray(loop.iterationVariable) ? loop.iterationVariable[0] : (typeof loop.iterationVariable === 'string' ? loop.iterationVariable : loop.name?.[0] || ''),
-          iterationOrder: (Array.isArray(loop.iterationOrder) ? loop.iterationOrder[0] : (typeof loop.iterationOrder === 'string' ? loop.iterationOrder : 'Asc')) as 'Asc' | 'Desc'
+          inputCollection: Array.isArray(loop.collectionReference) ? loop.collectionReference[0] : '',
+          currentItem: Array.isArray(loop.iterationVariable) ? loop.iterationVariable[0] : '',
+          iterationOrder: (Array.isArray(loop.iterationOrder) ? loop.iterationOrder[0] : 'Asc') as 'Asc' | 'Desc'
         }
       };
 

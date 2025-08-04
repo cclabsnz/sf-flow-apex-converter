@@ -111,9 +111,16 @@ export class LoopContextPropagator {
 
               // Check if this is a subflow with inputs referencing loop variables
               const elementType = this.elementTypes.get(target);
-              if (elementType === 'subflows' && this.metadata) {
-const subflows = this.metadata.subflows || [];
-const elementData = subflows.find((el: FlowBaseType) => el.name?.[0] === target);
+const elementNameMatch = target.match(/(.*?)(?:\..*)?$/);
+const baseElementName = elementNameMatch ? elementNameMatch[1] : target;
+
+if (elementType === 'subflows' && this.metadata) {
+                Logger.debug('LoopContextPropagator', `Processing subflow: ${baseElementName}`);
+                const subflows = this.metadata.subflows || [];
+const elementData = subflows.find((el: FlowBaseType) => {
+                  const elName = el.name?.[0];
+                  return elName && (elName === target || elName === baseElementName);
+                });
                 if (elementData?.inputAssignments) {
                   const inputs = Array.isArray(elementData.inputAssignments) ? elementData.inputAssignments : [elementData.inputAssignments];
 for (const input of inputs as any[]) {
