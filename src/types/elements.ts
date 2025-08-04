@@ -1,50 +1,29 @@
-export interface FlowElement {
-  id: string;
-  type: FlowElementType;
-  name: string;
-  metadata: any;
-  inputReferences?: string[];
-  outputReference?: string;
-  conditions?: FlowCondition[];
-  object?: string;
-}
-
-export interface FlowCondition {
-  expression: string;
-  metadata: any;
-}
-
 export enum FlowElementType {
-  START = 'START',
-  TRIGGER = 'TRIGGER',
-  DECISION = 'DECISION',
-  ASSIGNMENT = 'ASSIGNMENT',
-  LOOP = 'LOOP',
-  SUBFLOW = 'SUBFLOW',
-  RECORD_CREATE = 'RECORD_CREATE',
-  RECORD_UPDATE = 'RECORD_UPDATE',
-  RECORD_DELETE = 'RECORD_DELETE',
-  RECORD_LOOKUP = 'RECORD_LOOKUP'
-}
-
-export enum FlowElementType {
+  START = 'start',
+  TRIGGER = 'trigger',
+  ASSIGNMENT = 'assignments',
+  DECISION = 'decisions',
   RECORD_CREATE = 'recordCreates',
   RECORD_UPDATE = 'recordUpdates',
   RECORD_DELETE = 'recordDeletes',
   RECORD_LOOKUP = 'recordLookups',
   RECORD_ROLLBACK = 'recordRollbacks',
-  ASSIGNMENT = 'assignments',
-  DECISION = 'decisions',
   LOOP = 'loops',
   SUBFLOW = 'subflows',
   SCREEN = 'screens'
 }
 
 export interface FlowElement {
-  type: FlowElementType;
+  id: string;
   name: string;
-  properties: Record<string, unknown>;
-  connectors: FlowConnector[];
+  type: FlowElementType;
+  object?: string;
+  flowName?: string;
+  conditions?: any[];
+  properties?: Record<string, unknown>;
+  connectors?: FlowConnector[];
+  inputReferences?: string[];
+  outputReference?: string;
   isInLoop?: boolean;
   loopContext?: string;
 }
