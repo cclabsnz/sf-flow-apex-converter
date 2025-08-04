@@ -2,16 +2,20 @@ import { FlowMetadata, LoopContext, LoopMetrics } from '../../../types';
 import { Logger } from '../../Logger.js';
 import { LoopContextPropagator } from './LoopContextPropagator.js';
 
+import { LogLevel } from '../../Logger.js';
+
 export class LoopAnalyzer {
   private countElements(elements: unknown[] | unknown): number {
     return Array.isArray(elements) ? elements.length : elements ? 1 : 0;
   }
 
-  analyze(metadata: FlowMetadata): {
+analyze(metadata: FlowMetadata): {
     loopMetrics: LoopMetrics[];
     loopContexts: Map<string, LoopContext>;
     bulkificationIssues: string[];
   } {
+    Logger.setLogLevel(LogLevel.DEBUG);
+    Logger.debug('LoopAnalyzer', 'Starting analysis with debug logging');
     const loopMetrics: LoopMetrics[] = [];
     const bulkificationIssues: string[] = [];
 
