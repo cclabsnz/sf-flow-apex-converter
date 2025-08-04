@@ -117,10 +117,10 @@ program
       Logger.info('CLI', formatter.formatBasicAnalysis(analysis));
       
       if (analysis.loops?.length > 0) {
-        formatter.formatLoopAnalysis(analysis).forEach(line => Logger.info('CLI', line));
+formatter.formatLoopAnalysis(analysis).forEach((line: string) => Logger.info('CLI', line));
       }
       
-      formatter.formatRecommendations(analysis).forEach(line => Logger.info('CLI', line));
+formatter.formatRecommendations(analysis).forEach((line: string) => Logger.info('CLI', line));
       Logger.info('CLI', '\n===================');
 
       if (analysis.recommendations.length > 0) {
