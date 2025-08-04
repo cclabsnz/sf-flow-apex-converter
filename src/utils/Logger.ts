@@ -40,6 +40,8 @@ export class Logger {
   private static logLevel: LogLevel = LogLevel.INFO;
   private static logEnabled: boolean = true;
   private static logFile: string = path.join(process.cwd(), 'sf-flow-apex-converter.log');
+  private static detailedLogFile: string = path.join(process.cwd(), 'sf-flow-apex-converter-details.json');
+  private static detailedLogs: any[] = [];
 
   static setLogLevel(level: LogLevel) {
     Logger.logLevel = level;
@@ -84,25 +86,43 @@ export class Logger {
     fs.appendFileSync(this.logFile, message + '\n');
   }
 
+  private static writeDetailedLog(level: string, context: string, data: any) {
+    const timestamp = new Date().toISOString();
+    this.detailedLogs.push({
+      timestamp,
+      level,
+      context,
+      data
+    });
+    // Write to detailed log file immediately
+    fs.writeFileSync(
+      this.detailedLogFile,
+      JSON.stringify(this.detailedLogs, null, 2)
+    );
+  }
+
   private static log(level: LogLevel, context: string, message: string, data?: any) {
     if (this.shouldLog(level)) {
       const consoleMessage = this.formatConsoleMessage(level, context, message);
       const fileMessage = this.formatFileMessage(level, context, message);
 
-      // Log to console
+      // Log to console - only show the message, not the data
       console.log(consoleMessage);
-      if (data !== undefined) {
-        if (typeof data === 'object') {
-          console.log(COLORS.dim + JSON.stringify(data, null, 2) + COLORS.reset);
-        } else {
-          console.log(COLORS.dim + data + COLORS.reset);
-        }
+      
+      // For DEBUG level, we might want to show some data in console
+      if (level === LogLevel.DEBUG && data !== undefined) {
+        const preview = typeof data === 'object' ? 
+          JSON.stringify(data, null, 2).slice(0, 200) + '...' : 
+          String(data);
+        console.log(COLORS.dim + preview + COLORS.reset);
       }
 
-      // Log to file
+      // Log to main log file
       this.writeToFile(fileMessage);
+      
+      // Log detailed data to JSON file
       if (data !== undefined) {
-        this.writeToFile(typeof data === 'object' ? JSON.stringify(data, null, 2) : String(data));
+        this.writeDetailedLog(level.toLowerCase(), context, data);
       }
     }
   }
@@ -126,22 +146,17 @@ export class Logger {
 
       // Log to console
       console.error(consoleMessage);
-      if (error) {
-        if (error instanceof Error) {
-          console.error(COLORS.red + (error.stack || error.message) + COLORS.reset);
-        } else {
-          console.error(COLORS.red + JSON.stringify(error, null, 2) + COLORS.reset);
-        }
+      if (error && error instanceof Error) {
+        console.error(COLORS.red + error.message + COLORS.reset);
       }
 
       // Log to file
       this.writeToFile(fileMessage);
       if (error) {
-        if (error instanceof Error) {
-          this.writeToFile(error.stack || error.message);
-        } else {
-          this.writeToFile(JSON.stringify(error, null, 2));
-        }
+        const errorDetails = error instanceof Error ? 
+          { message: error.message, stack: error.stack } : error;
+        this.writeToFile(JSON.stringify(errorDetails, null, 2));
+        this.writeDetailedLog('error', context, { error: errorDetails });
       }
     }
   }
