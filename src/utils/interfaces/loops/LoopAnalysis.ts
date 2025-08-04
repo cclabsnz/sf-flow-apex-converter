@@ -1,3 +1,5 @@
+import { FlowElementType } from '../FlowTypes.js';
+
 export interface LoopMetrics {
   totalLoops: number;
   itemsProcessed: string[];
@@ -22,4 +24,6 @@ export interface LoopContext {
   loopReferenceName?: string;
   parentLoopNames?: string[];
   depth: number;
+  path?: string[];
+  pathTypes?: FlowElementType[];
 }

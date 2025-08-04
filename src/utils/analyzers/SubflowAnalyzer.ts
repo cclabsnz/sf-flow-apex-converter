@@ -4,6 +4,7 @@ import { SubflowAnalysis } from '../interfaces/analysis/FlowAnalysis.js';
 import { ComplexityAnalyzer } from './subflow/ComplexityAnalyzer.js';
 import { MetricsCalculator } from './MetricsCalculator.js';
 import { ApexRecommender } from './ApexRecommender.js';
+import { LoopContext } from '../interfaces/loops/LoopAnalysis.js';
 
 export class SubflowAnalyzer {
   private apexRecommender = new ApexRecommender();
@@ -12,7 +13,7 @@ export class SubflowAnalyzer {
     metadata: FlowMetadata,
     depth: number = 0,
     flowName: string = 'Unknown',
-    loopInfo?: { isInLoop: boolean; loopContext: string }
+    loopInfo?: LoopContext
   ): Promise<SubflowAnalysis> {
     Logger.info('SubflowAnalyzer', `Analyzing flow ${flowName} version ${metadata._flowVersion.version}`);
     Logger.debug('SubflowAnalyzer', 'Flow metadata:', {
@@ -75,7 +76,7 @@ export class SubflowAnalyzer {
     const analysis: SubflowAnalysis = {
       processType: 'Flow',
       apiVersion: metadata._flowVersion?.version || '1.0',
-      bulkificationScore: 100,
+      bulkificationScore: metrics.bulkificationScore ?? 100,
       totalElements: metrics.elements.size,
       flowName,
       shouldBulkify,
@@ -92,12 +93,12 @@ export class SubflowAnalyzer {
       cumulativeDmlOperations,
       soqlQueries: metrics.soqlQueries,
       cumulativeSoqlQueries,
-      parameters: metrics.parameters,
+      parameters: new Map(),
       version: metadata._flowVersion,
       soqlSources: Array.from(metrics.soqlSources),
       dmlSources: Array.from(metrics.dmlSources),
       isInLoop: loopInfo?.isInLoop ?? false,
-      loopContexts: metrics.loopContexts,
+      loopContexts: new Map(),
       elements: metrics.elements,
       subflows: [],  // TODO: Pass actual subflows when available
       totalElementsWithSubflows: metrics.elements.size,

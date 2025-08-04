@@ -164,26 +164,22 @@ describe('LoopContextPropagator', () => {
         {
           name: ['Validate_Better_Homes_Topup'],
           flowName: ['NC_Better_Homes_Topup_Validation'],
-          inputAssignments: [
-            {
-              name: ['LoanId'],
-              value: [{
-                elementReference: ['Loop_over_Loans.Id']
-              }]
+          inputAssignments: [{
+            name: ['LoanId'],
+            value: {
+              elementReference: ['Loop_over_Loans.Id']
             }
-          ]
+          }]
         },
         {
           name: ['Validate_Key_Loan_Dates'],
           flowName: ['Key_Loan_Date_Validation'],
-          inputAssignments: [
-            {
-              name: ['LoanId'],
-              value: [{
-                elementReference: ['Loop_over_Loans.Id']
-              }]
+          inputAssignments: [{
+            name: ['LoanId'],
+            value: {
+              elementReference: ['Loop_over_Loans.Id']
             }
-          ]
+          }]
         }
       ]
     };

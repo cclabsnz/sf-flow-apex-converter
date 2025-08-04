@@ -54,3 +54,11 @@ export interface OperationSource {
   inLoop: boolean;
   sources: string[];
 }
+
+export interface SubflowInfo {
+  isInLoop: boolean;
+  loopReferenceName: string;
+  path?: string[];
+  pathTypes?: string[];
+  depth: number;
+}

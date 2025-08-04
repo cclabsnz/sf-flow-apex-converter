@@ -10,14 +10,9 @@ import { RecommendationGenerator } from './analyzers/RecommendationGenerator.js'
 import { toXML } from './types/toXML';
 import { fromXML } from './types/fromXML';
 
-import {
-  FlowElementType,
-  FlowElement,
-  SecurityContext,
-  ComprehensiveFlowAnalysis,
-  SubflowAnalysis,
-  FlowMetadata
-} from '../types';
+import { FlowElementType } from './interfaces/FlowTypes.js';
+import { FlowElement, FlowMetadata } from '../types/elements';
+import { ComprehensiveFlowAnalysis, SubflowAnalysis, SubflowInfo } from './interfaces/FlowAnalysisTypes.js';
 
 export class FlowAnalyzer {
   constructor(
@@ -190,15 +185,27 @@ export class FlowAnalyzer {
                       continue;
                     }
                   }
+
+                  const flowContext = loopContext.get(flowElement.name);
+                  Logger.debug('FlowAnalyzer', `Subflow ${subflowName} context: ${JSON.stringify(flowContext)}`);
+                  
+                  // Check if any element in the path is a loop
+                  const isInNestedLoop = flowContext?.path?.some((element, index) => {
+                    const elementType = flowContext.pathTypes?.[index];
+                    return elementType === FlowElementType.LOOP;
+                  }) || false;
                   
                   const subflowAnalysis = await this.subflowManager.analyzeSubflow(
                     subflowName, 
                     0, 
                     subflowXml, 
                     Array.isArray(element.flowname) ? element.flowname[0] : undefined,
-                    flowElement.isInLoop ? {
+                    isInNestedLoop ? {
                       isInLoop: true,
-                      loopContext: flowElement.loopContext!
+                      loopReferenceName: flowContext?.loopReferenceName || '',
+                      path: flowContext?.path || [],
+                      pathTypes: flowContext?.pathTypes || [],
+                      depth: flowContext?.depth || 1
                     } : undefined
                   );
                   analysis.subflows.push(subflowAnalysis);

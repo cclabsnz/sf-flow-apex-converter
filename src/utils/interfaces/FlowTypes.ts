@@ -75,4 +75,6 @@ export interface LoopContext {
   loopReferenceName?: string;
   parentLoopNames?: string[];
   depth: number;
+  path?: string[];  // Track full path from loop to this element
+  pathTypes?: FlowElementType[]; // Track element types in the path
 }

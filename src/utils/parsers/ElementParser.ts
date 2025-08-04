@@ -1,6 +1,8 @@
 import { FlowElement, FlowElementType, ElementRef, FlowCondition } from '../../types';
 import { XMLNode } from '../../types/xml';
 import { Logger } from '../Logger.js';
+import { LoopContext } from '../interfaces/loops/LoopAnalysis.js';
+import { LoopContextPropagator } from '../analyzers/loops/LoopContextPropagator.js';
 
 export class ElementParser {
   private static typeToTags = {
@@ -113,111 +115,25 @@ export class ElementParser {
     return false;
   }
 
-  static buildLoopContext(metadata: any): Map<string, string> {
-    const loopContext = new Map<string, string>();
-    const loopNames = new Set<string>();
-
-    // First collect all loop names
-    if (metadata.loops) {
-      const loops = Array.isArray(metadata.loops) ? metadata.loops : [metadata.loops];
-      for (const loop of loops) {
-        if (loop.name) {
-          const loopName = Array.isArray(loop.name) ? loop.name[0] : loop.name;
-          loopNames.add(loopName);
-          Logger.debug('ElementParser', `Found loop: ${loopName}`);
-        }
-      }
-    }
-    const processConnector = (connector: any, loopName: string) => {
-      if (connector.targetReference) {
-        const target = Array.isArray(connector.targetReference) ? connector.targetReference[0] : connector.targetReference;
-        loopContext.set(target, loopName);
-        
-        // Check for subflows in the target element
-        // Check if target element exists in metadata
-        let targetElement;
-        const elementTypes = ['subflows', 'actionCalls', 'assignments', 'recordLookups', 'recordCreates', 'recordUpdates', 'recordDeletes'];
-        for (const type of elementTypes) {
-          if (metadata[type]) {
-            const elements = Array.isArray(metadata[type]) ? metadata[type] : [metadata[type]];
-            targetElement = elements.find((el: any) => {
-              const elName = Array.isArray(el.name) ? el.name[0] : el.name;
-              return elName === target;
-            });
-            if (targetElement) break;
-          }
-        }
-
-        if (targetElement) {
-          // Check for loop variable references in the target element
-          if (this.checkElementForLoopReferences(targetElement, loopNames)) {
-            Logger.debug('ElementParser', `Found loop reference in element: ${target}`);
-            loopContext.set(target, loopName);
-          }
-        }
-
-        if (target.toLowerCase().includes('subflow') || target.toLowerCase().includes('validation')) {
-          Logger.debug('ElementParser', `Found subflow in loop: ${target}`);
-        }
-        
-        // Recursively follow target elements to mark their targets as in the loop too
-        if (metadata[target.toLowerCase()]) {
-          const targetElement = Array.isArray(metadata[target.toLowerCase()]) 
-            ? metadata[target.toLowerCase()][0] 
-            : metadata[target.toLowerCase()];
-          if (targetElement.connector) {
-            const nextConnectors = Array.isArray(targetElement.connector) 
-              ? targetElement.connector 
-              : [targetElement.connector];
-            nextConnectors.forEach((nextConn: any) => processConnector(nextConn, loopName));
-          }
-        }
-      }
-    };
-    
-    // Process all elements to find loop variable references
-    const elementTypes = ['subflows', 'actionCalls', 'assignments', 'recordLookups', 'recordCreates', 'recordUpdates', 'recordDeletes'];
-    elementTypes.forEach((type: string) => {
-      if (metadata[type]) {
-        const elements = Array.isArray(metadata[type]) ? metadata[type] : [metadata[type]];
-        elements.forEach((element: any) => {
-          const elementName = Array.isArray(element.name) ? element.name[0] : element.name;
-          if (elementName && this.checkElementForLoopReferences(element, loopNames)) {
-            Logger.debug('ElementParser', `Found loop reference in ${type} element: ${elementName}`);
-            loopContext.set(elementName, Array.from(loopNames)[0]); // Use first loop for now
-          }
-        });
-      }
-    });
-
-    // Then process loop connectors
-    if (metadata.loops) {
-      const loops = Array.isArray(metadata.loops) ? metadata.loops : [metadata.loops];
-      for (const loop of loops) {
-        if (loop.name && loop.connector) {
-          const loopName = Array.isArray(loop.name) ? loop.name[0] : loop.name;
-          const connectors = Array.isArray(loop.connector) ? loop.connector : [loop.connector];
-          connectors.forEach((connector: any) => processConnector(connector, loopName));
-        }
-      }
-    }
-
-    return loopContext;
+  static buildLoopContext(metadata: any): Map<string, LoopContext> {
+    const propagator = new LoopContextPropagator();
+    return propagator.propagateLoopContexts(metadata);
   }
 
-  static isElementInLoop(elementName: string, loopContext: Map<string, string>, visitedElements: Set<string> = new Set()): string | undefined {
+  static isElementInLoop(elementName: string, loopContext: Map<string, LoopContext>, visitedElements: Set<string> = new Set()): string | undefined {
     if (visitedElements.has(elementName)) return undefined;
     visitedElements.add(elementName);
-    return loopContext.get(elementName);
+    const context = loopContext.get(elementName);
+    return context?.loopReferenceName;
   }
 
   static parseElement(
     elementMetadata: any, 
     elementType: FlowElementType, 
-    loopContext: Map<string, string>
+    loopContext: Map<string, LoopContext>
   ): FlowElement {
     const elementName = elementMetadata.name?.[0] || 'Unnamed';
-    const elementLoopContext = this.isElementInLoop(elementName, loopContext);
+    const context = loopContext.get(elementName);
     
     return {
       id: Array.isArray(elementMetadata.name) ? elementMetadata.name[0] : 'unknown',
@@ -225,8 +141,8 @@ export class ElementParser {
       name: elementName,
       properties: this.parseProperties(elementMetadata),
       connectors: this.parseConnectors(elementMetadata),
-      isInLoop: !!elementLoopContext,
-      loopContext: elementLoopContext
+      isInLoop: !!context?.isInLoop,
+      loopContext: context?.loopReferenceName
     };
   }
 
