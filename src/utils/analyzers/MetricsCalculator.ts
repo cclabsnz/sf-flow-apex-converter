@@ -1,7 +1,7 @@
 import { FlowMetadata } from '../../types/elements';
 import { FlowMetrics } from './metrics/types';
 import { ElementCounter } from './metrics/ElementCounter.js';
-import { LoopAnalyzer } from './metrics/LoopAnalyzer.js';
+import { LoopAnalyzer } from './loops/LoopAnalyzer.js';
 import { OperationCounter } from './metrics/OperationCounter.js';
 import { ParameterExtractor } from './metrics/ParameterExtractor.js';
 import { XMLNode } from '../types/XMLNode';
@@ -19,7 +19,8 @@ export class MetricsCalculator {
     } = OperationCounter.countOperations(flowMetadata);
 
     const parameters = ParameterExtractor.extractParameters(flowMetadata);
-    const { loopMetrics, loopContexts } = LoopAnalyzer.analyzeLoops(flowMetadata);
+    const analyzer = new LoopAnalyzer();
+    const { loopMetrics, loopContexts } = analyzer.analyze(flowMetadata);
 
     return {
       elements,
