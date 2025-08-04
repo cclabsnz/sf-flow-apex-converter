@@ -2,6 +2,7 @@ import { FlowElement, FlowVersion } from '../../../types/elements';
 import { SecurityContext } from '../security/SecurityContext.js';
 import { LoopMetrics, LoopContext } from '../loops/LoopAnalysis.js';
 import { ApexRecommendation } from '../SubflowTypes.js';
+import { FlowElementType } from '../FlowTypes.js';
 
 export interface OperationSource {
   sourceFlow: string;
@@ -23,6 +24,14 @@ export interface OperationSummary {
   };
   dmlOperations: OperationSource[];
   soqlQueries: OperationSource[];
+}
+
+export interface SubflowInfo {
+  isInLoop: boolean;
+  loopReferenceName: string;
+  path?: string[];
+  pathTypes?: FlowElementType[];
+  depth: number;
 }
 
 export interface FlowAnalysisBase {

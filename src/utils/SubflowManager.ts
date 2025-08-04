@@ -3,7 +3,7 @@ import { Logger } from './Logger.js';
 import { SchemaManager } from './SchemaManager.js';
 import { SubflowParser } from './parsers/SubflowParser.js';
 import { SubflowAnalyzer } from './analyzers/SubflowAnalyzer.js';
-import { SubflowAnalysis } from './interfaces/analysis/FlowAnalysis.js';
+import { SubflowAnalysis, SubflowInfo } from './interfaces/analysis/FlowAnalysis.js';
 import { FlowElement, FlowMetadata } from '../types/elements';
 
 export class SubflowManager {
@@ -98,7 +98,7 @@ export class SubflowManager {
     depth: number = 0, 
     xml?: string, 
     flowName?: string,
-    loopInfo?: { isInLoop: boolean; loopContext: string }
+    loopInfo?: SubflowInfo
   ): Promise<SubflowAnalysis> {
     if (!xml && this.getFlowXml) {
       xml = this.getFlowXml(subflowName);
