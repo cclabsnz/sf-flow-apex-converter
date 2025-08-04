@@ -26,12 +26,13 @@ program
   .version(packageJson.version)
   .arguments('<flow-path-or-name>')
   .option('--from-org', 'Fetch flow directly from a connected org')
-  .option('--verbose', 'Show detailed analysis and progress')
+  .option('--verbose', 'Write detailed analysis to file')
+  .option('--show-logs', 'Show logs in console (default: logs written to file only)')
   .option('--deploy', 'Deploy generated Apex class to the org')
   .option('--test-only', 'Validate deployment without deploying')
   .option('--target-org <username>', 'Specify the target org (alias or username)')
   .option('--log-level <level>', 'Set the log level (debug, info, warn, error)', 'info')
-  .option('--quiet', 'Disable logging')
+  .option('--quiet', 'Disable all logging')
   .action(async (flowPathOrName, options) => {
     // Setup logger
     Logger.setLogLevel(options.logLevel?.toUpperCase() as LogLevel || LogLevel.INFO);
