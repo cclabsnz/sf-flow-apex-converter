@@ -39,6 +39,7 @@ const COLORS = {
 export class Logger {
   private static logLevel: LogLevel = LogLevel.INFO;
   private static logEnabled: boolean = true;
+  private static consoleEnabled: boolean = false;
   private static logFile: string = path.join(process.cwd(), 'sf-flow-apex-converter.log');
   private static detailedLogFile: string = path.join(process.cwd(), 'sf-flow-apex-converter-details.json');
   private static detailedLogs: any[] = [];
@@ -49,6 +50,10 @@ export class Logger {
 
   static enableLogs(enabled: boolean) {
     Logger.logEnabled = enabled;
+  }
+
+  static enableConsoleOutput(enabled: boolean) {
+    Logger.consoleEnabled = enabled;
   }
 
   private static shouldLog(level: LogLevel): boolean {
@@ -106,15 +111,17 @@ export class Logger {
       const consoleMessage = this.formatConsoleMessage(level, context, message);
       const fileMessage = this.formatFileMessage(level, context, message);
 
-      // Log to console - only show the message, not the data
-      console.log(consoleMessage);
-      
-      // For DEBUG level, we might want to show some data in console
-      if (level === LogLevel.DEBUG && data !== undefined) {
-        const preview = typeof data === 'object' ? 
-          JSON.stringify(data, null, 2).slice(0, 200) + '...' : 
-          String(data);
-        console.log(COLORS.dim + preview + COLORS.reset);
+      // Log to console if enabled
+      if (this.consoleEnabled) {
+        console.log(consoleMessage);
+        
+        // For DEBUG level, we might want to show some data in console
+        if (level === LogLevel.DEBUG && data !== undefined) {
+          const preview = typeof data === 'object' ? 
+            JSON.stringify(data, null, 2).slice(0, 200) + '...' : 
+            String(data);
+          console.log(COLORS.dim + preview + COLORS.reset);
+        }
       }
 
       // Log to main log file
@@ -144,10 +151,12 @@ export class Logger {
       const consoleMessage = this.formatConsoleMessage(LogLevel.ERROR, context, message);
       const fileMessage = this.formatFileMessage(LogLevel.ERROR, context, message);
 
-      // Log to console
-      console.error(consoleMessage);
-      if (error && error instanceof Error) {
-        console.error(COLORS.red + error.message + COLORS.reset);
+      // Log to console if enabled
+      if (this.consoleEnabled) {
+        console.error(consoleMessage);
+        if (error && error instanceof Error) {
+          console.error(COLORS.red + error.message + COLORS.reset);
+        }
       }
 
       // Log to file
@@ -166,7 +175,9 @@ export class Logger {
       const percentage = Math.round((current / total) * 100);
       const progressBar = this.createProgressBar(percentage);
       const consoleMessage = this.formatConsoleMessage(LogLevel.INFO, context, `${message} ${progressBar} ${percentage}%`);
-      console.log(consoleMessage);
+      if (this.consoleEnabled) {
+        console.log(consoleMessage);
+      }
     }
   }
 
