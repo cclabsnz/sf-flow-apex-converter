@@ -37,7 +37,14 @@ program
     // Setup logger
     Logger.setLogLevel(options.logLevel?.toUpperCase() as LogLevel || LogLevel.INFO);
     Logger.enableLogs(!options.quiet);
-    Logger.info('CLI', 'Starting...');
+    Logger.enableConsoleOutput(options.showLogs || false);
+    
+    if (options.showLogs) {
+      console.log('Console logging is enabled. All logs will be shown in console.');
+    } else {
+      console.log('Console logging is disabled. Logs are being written to files only.');
+      console.log('Use --show-logs to enable console logging.');
+    }
 
     try {
       let flowXml;
