@@ -85,11 +85,11 @@ program
       const flowAnalyzer = new FlowAnalyzer(conn, schemaManager, subflowManager, securityAnalyzer, orgMetadataFetcher, getFlowXml);
 
       const parsedMetadata = await MetadataParser.parseMetadata(flowXml);
-      const wrappedMetadata = {
+    const wrappedMetadata = {
         Metadata: parsedMetadata,
         definition: {
-          DeveloperName: flowPathOrName,
-          ProcessType: parsedMetadata.processType?.[0] || 'Flow'
+          DeveloperName: flowPathOrName.replace('.xml', '').replace('.flow-meta', ''),
+          ProcessType: parsedMetadata.processType?.[0] || parsedMetadata.processType || 'Flow'
         }
       };
 
