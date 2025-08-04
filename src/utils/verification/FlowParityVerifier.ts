@@ -1,4 +1,5 @@
-import { FlowMetadata, FlowElement } from '../interfaces/types';
+import { FlowMetadata, FlowElement, FlowElementType } from '../interfaces/types';
+import { StringBuilder } from './utils/StringBuilder';
 
 export interface FlowTestCase {
   name: string;

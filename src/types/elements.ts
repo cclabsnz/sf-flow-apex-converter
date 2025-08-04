@@ -1,3 +1,32 @@
+export interface FlowElement {
+  id: string;
+  type: FlowElementType;
+  name: string;
+  metadata: any;
+  inputReferences?: string[];
+  outputReference?: string;
+  conditions?: FlowCondition[];
+  object?: string;
+}
+
+export interface FlowCondition {
+  expression: string;
+  metadata: any;
+}
+
+export enum FlowElementType {
+  START = 'START',
+  TRIGGER = 'TRIGGER',
+  DECISION = 'DECISION',
+  ASSIGNMENT = 'ASSIGNMENT',
+  LOOP = 'LOOP',
+  SUBFLOW = 'SUBFLOW',
+  RECORD_CREATE = 'RECORD_CREATE',
+  RECORD_UPDATE = 'RECORD_UPDATE',
+  RECORD_DELETE = 'RECORD_DELETE',
+  RECORD_LOOKUP = 'RECORD_LOOKUP'
+}
+
 export enum FlowElementType {
   RECORD_CREATE = 'recordCreates',
   RECORD_UPDATE = 'recordUpdates',

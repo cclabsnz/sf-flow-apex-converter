@@ -1,4 +1,4 @@
-import { FlowMetadata, FlowElement } from '../interfaces/types';
+import { FlowMetadata, FlowElement, FlowElementType } from '../interfaces/types';
 import { FlowGraph, FlowNode, FlowEdge, FlowState } from './types';
 
 export class FlowGraphAnalyzer {
