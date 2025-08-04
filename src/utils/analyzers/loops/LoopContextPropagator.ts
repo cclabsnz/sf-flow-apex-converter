@@ -24,6 +24,16 @@ export class LoopContextPropagator {
     this.processElementType(metadata.subflows, 'subflows');
   }
 
+  private isElementInLoop(elementName: string, flowName?: string): boolean {
+    // Check direct loop context
+    const context = this.loopContexts.get(elementName);
+    if (context?.isInLoop) return true;
+
+    // Check if element name is referenced in any variable expressions
+    // This helps detect elements that are implicitly in a loop context
+    return !!elementName.match(/.*Loop_over_.*/) || !!elementName.match(/Loop\[.*\]/i);
+  }
+
   private processElementType(elements: FlowBaseType[] | undefined, type: string): void {
     if (!elements) return;
 
@@ -88,11 +98,34 @@ export class LoopContextPropagator {
             // Only set loop context if element isn't already in a loop
             // This preserves the first loop that claims an element
             if (!existingContext) {
+              const parentContext = elementContext;
               this.loopContexts.set(target, {
                 isInLoop: true,
-                loopReferenceName: elementContext.loopReferenceName,
-                depth: elementContext.depth
+                loopReferenceName: parentContext.loopReferenceName,
+                depth: parentContext.depth
               });
+
+              // Check if this is a subflow with inputs referencing loop variables
+              if (type === 'subflows') {
+                const subflow = elements?.find(e => e.name?.[0] === target);
+                if (subflow?.inputAssignments) {
+                  const inputs = Array.isArray(subflow.inputAssignments) ? subflow.inputAssignments : [subflow.inputAssignments];
+                  for (const input of inputs) {
+                    const value = Array.isArray(input.value) ? input.value[0] : input.value;
+                    const elementRef = value?.elementReference?.[0];
+                    if (elementRef?.startsWith('Loop_over_')) {
+                      Logger.debug('LoopContextPropagator', `Subflow ${target} has loop variable in input: ${elementRef}`);
+                      this.loopContexts.set(target, {
+                        isInLoop: true,
+                        loopReferenceName: elementRef.split('.')[0],
+                        depth: parentContext.depth + 1
+                      });
+                      break;
+                    }
+                  }
+                }
+              }
+
               changed = true;
               Logger.debug('LoopContextPropagator', `Propagated loop context to ${target} from ${element}`);
             }
