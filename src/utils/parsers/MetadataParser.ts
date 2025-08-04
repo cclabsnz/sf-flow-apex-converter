@@ -70,10 +70,18 @@ export class MetadataParser {
       });
 
       Logger.debug('MetadataParser', 'Successfully parsed XML metadata');
-      const flow = parsed.Flow || parsed;
+      const flow = parsed.flow || parsed.Flow || parsed;
+      
+      // Convert any camelCase tags to lowercase for consistency
+      Object.keys(flow).forEach(key => {
+        const lowerKey = key.toLowerCase();
+        if (key !== lowerKey && !flow[lowerKey]) {
+          flow[lowerKey] = flow[key];
+        }
+      });
       
       // Add version info if provided
-      if (flow.Version && flow.Status) {
+      if (flow.version || flow.Version) {
         flow._flowVersion = {
           version: flow.Version[0] || '1.0',
           status: flow.Status[0] || 'Unknown',
