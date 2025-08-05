@@ -33,35 +33,33 @@ export class BulkificationAnalyzer {
     if (soqlQueries > 0) {
       let soqlMessage = `Contains ${soqlQueries} SOQL queries`;
       if (soqlInLoop) {
-        soqlMessage += ' (detected in: loop recordLookups';
-        if (metadata.loops) {
-          const loops = Array.isArray(metadata.loops) ? metadata.loops : [metadata.loops];
-          for (const loop of loops) {
-            if (loop.elements) {
-              const elements = Array.isArray(loop.elements) ? loop.elements : [loop.elements];
-              for (const element of elements) {
-                const elementType = Array.isArray((element as any).type) ? (element as any).type[0] : '';
-                const isActionCall = (element as any).actionCall || elementType === 'ActionCall' || elementType === 'actionCalls';
-                const isSubflow = (element as any).subflow || elementType === 'Subflow' || elementType === 'subflows';
-
-                if (isActionCall || isSubflow) {
-                  soqlMessage += isActionCall ? ', Apex actions' : ', subflows';
-                  reasons.push(`Contains ${isActionCall ? 'action calls' : 'subflows'} inside loop`);
-                  break;
-                }
-              }
-            }
-          }
-        }
-        soqlMessage += ')';
+        soqlMessage += ' (found in loop)';
       }
       reasons.push(soqlMessage);
     }
     if (complexity > 5) reasons.push(`High complexity score: ${complexity}`);
-    if (metadata.loops) reasons.push('Contains loops');
     
-    return reasons.length > 0 
-      ? reasons.join(', ')
-      : 'Simple subflow - bulkification not required';
+    if (metadata.loops) {
+      const loops = Array.isArray(metadata.loops) ? metadata.loops : [metadata.loops];
+      loops.forEach(loop => {
+        if (loop.elements) {
+          const elements = Array.isArray(loop.elements) ? loop.elements : [loop.elements];
+          const subflows = elements.filter(element => {
+            const elementType = Array.isArray((element as any).type) ? (element as any).type[0] : (element as any).type;
+            return elementType === 'Subflow' || (element as any).subflow || (element as any).flowName;
+          }).map(element => (element as any).flowName || 'Unnamed Subflow');
+          
+          if (subflows.length > 0) {
+            reasons.push(`Contains subflow calls inside loop: ${subflows.join(', ')}`);
+          }
+        }
+      });
+    }
+    
+    if (reasons.length === 0) {
+      return 'Simple subflow - bulkification not required';
+    }
+
+    return reasons.join('\n- ');
   }
 }
