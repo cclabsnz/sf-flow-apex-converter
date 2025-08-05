@@ -50,3 +50,6 @@ coverage/
 # Analysis details
 flow-analysis-details.json
 sf-flow-apex-converter-details.json
+
+# Tool-specific directories
+.serena/
