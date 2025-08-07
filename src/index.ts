@@ -1,19 +1,11 @@
 #!/usr/bin/env node
 
-require('abort-controller/polyfill');
 import { Command } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Org } from '@salesforce/core';
+import { SimplifiedFlowAnalyzer } from './utils/SimplifiedFlowAnalyzer.js';
+import { BulkifiedApexGenerator } from './utils/BulkifiedApexGenerator.js';
 import { Logger, LogLevel } from './utils/Logger.js';
-import { Connection } from 'jsforce';
-import { FlowAnalyzer } from './utils/FlowAnalyzer.js';
-import { ApexGenerator } from './utils/ApexGenerator.js';
-import { SchemaManager } from './utils/SchemaManager.js';
-import { SubflowManager } from './utils/SubflowManager.js';
-import { MetadataParser } from './utils/parsers/MetadataParser.js';
-import { SecurityAnalyzer } from './utils/analyzers/SecurityAnalyzer.js';
-import { OrgMetadataFetcher } from './utils/fetchers/OrgMetadataFetcher.js';
 
 const program = new Command();
 
@@ -22,161 +14,137 @@ const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.
 
 program
   .name('sf-flow-apex-converter')
-  .description('A CLI tool to convert Salesforce Flows to bulkified Apex classes')
+  .description('Convert Salesforce Flows to bulkified Apex classes')
   .version(packageJson.version);
 
+// Analyze command
 program
-  .command('analyze')
-  .argument('<flow-path-or-name>', 'Path to the flow XML file or flow name in org')
-  .option('-d, --debug', 'Enable debug logging')
-  .option('--from-org', 'Fetch flow directly from a connected org')
-  .option('--verbose', 'Write detailed analysis to separate files')
-  .option('--show-logs', 'Show debug logs in console (detailed progress messages)')
-  .option('--deploy', 'Deploy generated Apex class to the org')
-  .option('--test-only', 'Validate deployment without deploying')
-  .option('--target-org <username>', 'Specify the target org (alias or username)')
-  .option('--log-level <level>', 'Set the log level (debug, info, warn, error)', 'info')
-  .option('--quiet', 'Disable all logging')
-  .action(async (flowPathOrName, options) => {
-    // Setup logger
-    Logger.setLogLevel(options.debug ? LogLevel.DEBUG : (options.logLevel?.toUpperCase() as LogLevel || LogLevel.INFO));
-    Logger.enableLogs(!options.quiet);
-    // Enable console logging for debug or show-logs
-    Logger.enableConsoleOutput(options.debug || options.showLogs || false);
+  .command('analyze <flow-file>')
+  .description('Analyze a flow for bulkification issues')
+  .option('-v, --verbose', 'Show detailed analysis')
+  .action(async (flowFile, options) => {
+    Logger.setLogLevel(options.verbose ? LogLevel.DEBUG : LogLevel.INFO);
+    Logger.enableLogs(true);
     
-    if (options.showLogs && options.verbose) {
-      console.log('Debug logging will be shown in console.');
+    if (!fs.existsSync(flowFile)) {
+      console.error(`❌ Flow file not found: ${flowFile}`);
+      process.exit(1);
     }
-
+    
     try {
-      let flowXml;
-      let org;
-      let conn;
-
-      const getFlowXml = (flowName: string): string | undefined => {
-        const possiblePaths = [
-          path.join(process.cwd(), `force-app/main/default/flows/${flowName}.flow-meta.xml`),
-          path.join(process.cwd(), `force-app/main/default/flows/${flowName}.flow`)
-        ];
-        for (const p of possiblePaths) {
-          if (fs.existsSync(p)) {
-            return fs.readFileSync(p, 'utf8');
-          }
-        }
-        return undefined;
-      };
-
-      if (options.fromOrg) {
-        Logger.info('CLI', 'Fetching flow from org...');
-        const orgAlias = options.targetOrg;
-        if (!orgAlias) {
-          throw new Error('No target org specified. Use --target-org to specify an org.');
-        }
-        org = await Org.create({ aliasOrUsername: orgAlias });
-        conn = org.getConnection() as any;
-        const orgMetadataFetcher = new OrgMetadataFetcher(conn);
-        const flowResult = await orgMetadataFetcher.fetchFlowFromOrg(flowPathOrName);
-        flowXml = flowResult.Metadata;
-        Logger.info('CLI', `Successfully fetched flow "${flowPathOrName}" from org.`);
-      } else {
-        const fullPath = path.join(process.cwd(), flowPathOrName);
-        if (!fs.existsSync(fullPath) || !fs.lstatSync(fullPath).isFile()) {
-          throw new Error(`File not found at: ${fullPath}`);
-        }
-        flowXml = fs.readFileSync(fullPath, 'utf-8');
-        conn = new Connection({});
-        Logger.info('CLI', `Successfully read flow from file: ${fullPath}`);
-      }
-
-      const schemaManager = new SchemaManager(conn);
-      const subflowManager = new SubflowManager(conn, schemaManager, getFlowXml);
-      const securityAnalyzer = new SecurityAnalyzer();
-      const orgMetadataFetcher = new OrgMetadataFetcher(conn);
-      const flowAnalyzer = new FlowAnalyzer(conn, schemaManager, subflowManager, securityAnalyzer, orgMetadataFetcher, getFlowXml);
-
-      const parsedMetadata = await MetadataParser.parseMetadata(flowXml);
-    const processType = Array.isArray(parsedMetadata.processType)
-        ? parsedMetadata.processType[0]
-        : (typeof parsedMetadata.processType === 'string'
-          ? parsedMetadata.processType
-          : 'Flow');
-
-    const wrappedMetadata = {
-        Metadata: parsedMetadata,
-        definition: {
-          DeveloperName: flowPathOrName.replace('.xml', '').replace('.flow-meta', ''),
-          ProcessType: processType
-        }
-      };
-
-      const analysis = await flowAnalyzer.analyzeFlowComprehensive(wrappedMetadata);
-
-      // Import FlowOutputFormatter at the top
-      const FlowOutputFormatter = require('./utils/output/FlowOutputFormatter.js').FlowOutputFormatter;
-      const formatter = new FlowOutputFormatter();
-
-      // Write detailed analysis to file
-      if (options.verbose) {
-        const analysisFile = path.join(process.cwd(), 'flow-analysis-details.json');
-        fs.writeFileSync(analysisFile, JSON.stringify(analysis, null, 2));
-        Logger.info('CLI', `Detailed analysis written to ${analysisFile}`);
-      }
-
-      // Display formatted analysis summary
-      // Always show the analysis summary on console
-      console.log('\n=== Flow Analysis ===');
-      console.log(formatter.formatBasicAnalysis(analysis));
+      const analyzer = new SimplifiedFlowAnalyzer();
+      const results = await analyzer.analyzeSubflows(flowFile);
       
-      if (analysis.loops?.length > 0) {
-formatter.formatLoopAnalysis(analysis).forEach((line: string) => console.log(line));
+      console.log('\n📊 ANALYSIS RESULTS:');
+      for (const [flowName, result] of results) {
+        console.log(`\nFlow: ${flowName}`);
+        console.log(`  Elements: ${result.elements.size}`);
+        console.log(`  Loops: ${result.loops.size}`);
+        console.log(`  Issues: ${result.bulkificationIssues.length}`);
+        
+        if (result.bulkificationIssues.length > 0) {
+          console.log('\n  Issues found:');
+          result.bulkificationIssues.forEach(issue => {
+            console.log(`    ⚠️ ${issue}`);
+          });
+        }
       }
       
-formatter.formatRecommendations(analysis).forEach((line: string) => console.log(line));
-console.log('\n===================');
-
-      if (analysis.recommendations.length > 0) {
-        console.log('\nBulkification is required. Generating Apex class...');
-        const apexClass = ApexGenerator.generateApex(analysis);
-
-        console.log('\n--- Generated Apex Class ---');
-        console.log(apexClass);
-        console.log('--------------------------');
-
-        if (options.deploy || options.testOnly) {
-          if (!conn) {
-             const orgAlias = options.targetOrg;
-             if (!orgAlias) {
-               throw new Error('No target org specified. Use --target-org to specify an org.');
-             }
-             org = await Org.create({ aliasOrUsername: orgAlias });
-             conn = org.getConnection() as any;
-          }
-          const result = await ApexGenerator.deployApex(analysis, options.testOnly, options.targetOrg, conn);
-
-          if(result.success) {
-            console.log('Deployment successful.');
-          } else {
-            console.error('Deployment failed:');
-            if(Array.isArray(result.errors)) {
-              result.errors.forEach((err: any) => console.error(String(err)));
-            } else {
-              Logger.error('CLI', String(result.errors));
-            }
-          }
-        }
-      } else {
-        console.log('Flow does not require bulkification. No Apex class generated.');
-      }
+      // Save report
+      const report = {
+        timestamp: new Date().toISOString(),
+        flows: Array.from(results.entries()).map(([name, result]) => ({
+          name,
+          issues: result.bulkificationIssues,
+          requiresBulkification: result.requiresBulkification
+        }))
+      };
+      
+      fs.writeFileSync('flow-analysis-report.json', JSON.stringify(report, null, 2));
+      console.log('\n📄 Report saved to: flow-analysis-report.json');
+      
     } catch (error) {
-      Logger.error('CLI', 'An error occurred:');
-      if (error instanceof Error) {
-        Logger.error('CLI', `Message: ${error.message}`);
-        Logger.error('CLI', `Stack: ${error.stack}`);
-      } else {
-        Logger.error('CLI', `Error: ${String(error)}`);
-      }
+      console.error('❌ Analysis failed:', error);
       process.exit(1);
     }
   });
 
-program.parse(process.argv);
+// Bulkify command
+program
+  .command('bulkify <flow-file>')
+  .description('Convert a flow to bulkified Apex')
+  .option('-o, --output <dir>', 'Output directory', './generated-apex')
+  .option('-v, --verbose', 'Show detailed output')
+  .option('--no-test', 'Skip test class generation')
+  .action(async (flowFile, options) => {
+    Logger.setLogLevel(options.verbose ? LogLevel.DEBUG : LogLevel.INFO);
+    Logger.enableLogs(true);
+    
+    if (!fs.existsSync(flowFile)) {
+      console.error(`❌ Flow file not found: ${flowFile}`);
+      process.exit(1);
+    }
+    
+    try {
+      console.log('🚀 Starting flow bulkification...\n');
+      
+      // Analyze
+      const analyzer = new SimplifiedFlowAnalyzer();
+      const analysisResults = await analyzer.analyzeSubflows(flowFile);
+      const primaryFlowName = path.basename(flowFile);
+      const primaryFlow = analysisResults.get(primaryFlowName);
+      
+      if (!primaryFlow) {
+        throw new Error('Failed to analyze flow');
+      }
+      
+      console.log(`✅ Analysis complete: ${primaryFlow.bulkificationIssues.length} issues found`);
+      
+      if (primaryFlow.bulkificationIssues.length === 0) {
+        console.log('✅ Flow is already optimized!');
+        return;
+      }
+      
+      // Generate Apex
+      const generator = new BulkifiedApexGenerator();
+      const result = generator.generateApex(analysisResults, primaryFlowName);
+      
+      // Create output directory
+      const outputDir = path.resolve(options.output);
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+      
+      // Write files
+      const apexPath = path.join(outputDir, `${result.className}.cls`);
+      fs.writeFileSync(apexPath, result.apexCode);
+      
+      const metaContent = `<?xml version="1.0" encoding="UTF-8"?>
+<ApexClass xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>59.0</apiVersion>
+    <status>Active</status>
+</ApexClass>`;
+      fs.writeFileSync(`${apexPath}-meta.xml`, metaContent);
+      
+      if (options.test !== false) {
+        const testPath = path.join(outputDir, `${result.className}_Test.cls`);
+        fs.writeFileSync(testPath, result.testCode);
+        fs.writeFileSync(`${testPath}-meta.xml`, metaContent);
+      }
+      
+      console.log(`\n✅ Generated files in: ${outputDir}`);
+      console.log('\n📋 Recommendations:');
+      result.recommendations.forEach(rec => console.log(`  ${rec}`));
+      
+    } catch (error) {
+      console.error('❌ Bulkification failed:', error);
+      process.exit(1);
+    }
+  });
+
+// Default action - show help
+if (process.argv.length <= 2) {
+  program.help();
+}
+
+program.parse();
