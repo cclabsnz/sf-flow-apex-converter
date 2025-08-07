@@ -1,6 +1,6 @@
 {
   "name": "@cclabsnz/sf-flow-apex-converter",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Analyze Salesforce Flows for governor limit issues and convert them to bulkified Apex classes",
   "main": "dist/index.js",
   "scripts": {
