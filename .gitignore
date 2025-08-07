@@ -47,6 +47,13 @@ coverage/
 # Claude configuration
 .claude-limits
 
-# Analysis details
+# Analysis and generated files
+flow-analysis-report.json
 flow-analysis-details.json
 sf-flow-apex-converter-details.json
+sf-flow-apex-converter.log
+generated-apex/
+test-output/
+
+# Serena/Claude
+.serena/
