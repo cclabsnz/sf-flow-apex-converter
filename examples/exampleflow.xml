@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <recordUpdates operation="update" name="UpdateAccounts" id="ru1">
+        <object>Account</object>
+        <filters>
+            <field>Type</field>
+            <operator>EqualTo</operator>
+            <value>
+                <stringValue>Customer</stringValue>
+            </value>
+        </filters>
+    </recordUpdates>
+    <recordCreates operation="create" name="CreateContacts" id="rc1">
+        <object>Contact</object>
+        <connector>
+            <targetReference>UpdateAccounts</targetReference>
+        </connector>
+    </recordCreates>
+    <loops id="loop1">
+        <loop name="ProcessItems">
+            <collectionReference>items</collectionReference>
+            <connector>
+                <targetReference>CreateContacts</targetReference>
+            </connector>
+        </loop>
+    </loops>
+</Flow>
