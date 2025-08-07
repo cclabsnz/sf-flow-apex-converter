@@ -37,8 +37,21 @@ program
       const analyzer = new SimplifiedFlowAnalyzer();
       const analysisResults = await analyzer.analyzeSubflows(flowFile);
       
-      const primaryFlowName = path.basename(flowFile);
-      const primaryFlow = analysisResults.get(primaryFlowName);
+      // Get the primary flow name (without extension)
+      const primaryFlowName = path.basename(flowFile)
+        .replace(/\.flow-meta\.xml$/, '')
+        .replace(/\.flow\.xml$/, '')
+        .replace(/\.xml$/, '');
+      
+      // Try to find the flow in results
+      let primaryFlow = analysisResults.get(primaryFlowName);
+      
+      // If not found, try the first result (since it's the main flow)
+      if (!primaryFlow && analysisResults.size > 0) {
+        const firstKey = Array.from(analysisResults.keys())[0];
+        primaryFlow = analysisResults.get(firstKey);
+        console.log(`   Using flow: ${firstKey}`);
+      }
       
       if (!primaryFlow) {
         throw new Error('Failed to analyze primary flow');

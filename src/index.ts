@@ -91,7 +91,9 @@ program
       // Analyze
       const analyzer = new SimplifiedFlowAnalyzer();
       const analysisResults = await analyzer.analyzeSubflows(flowFile);
-      const primaryFlowName = path.basename(flowFile);
+      
+      // Get the primary flow (first one analyzed is always the main flow)
+      const primaryFlowName = Array.from(analysisResults.keys())[0];
       const primaryFlow = analysisResults.get(primaryFlowName);
       
       if (!primaryFlow) {

@@ -57,7 +57,11 @@ export class SimplifiedFlowAnalyzer {
 
   async analyzeFlowFromXML(xmlPath: string): Promise<FlowAnalysisResult> {
     const xmlContent = fs.readFileSync(xmlPath, 'utf-8');
-    const flowName = path.basename(xmlPath, '.flow-meta.xml');
+    // Remove any flow-related extension
+    const flowName = path.basename(xmlPath)
+      .replace(/\.flow-meta\.xml$/, '')
+      .replace(/\.flow\.xml$/, '')
+      .replace(/\.xml$/, '');
     return this.analyzeFlow(xmlContent, flowName);
   }
 
