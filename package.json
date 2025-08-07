@@ -9,6 +9,8 @@
     "test": "jest",
     "lint": "eslint src/**/*.ts",
     "start": "node dist/index.js",
+    "analyze": "npm run build && node dist/analyze-flow.js",
+    "bulkify": "npm run build && node dist/flow-bulkifier-cli.js",
     "prepublishOnly": "npm run build"
   },
   "files": [
