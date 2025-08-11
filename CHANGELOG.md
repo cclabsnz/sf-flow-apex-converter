@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- 🚫 Detect and recommend moving Apex actions found inside loops to maintain bulk safety
+- 📝 Documented FlowIR and bulkification rationale so generated Apex retains full business context
+
 ## [2.0.0] - 2024-08-07
 
 ### 🎉 Major Release - Complete Rewrite

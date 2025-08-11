@@ -3,6 +3,28 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Logger } from './Logger.js';
 
+interface RawConnector { targetreference?: string }
+
+interface RawRule { connector?: RawConnector }
+
+interface RawFlowElement {
+  name?: string;
+  connector?: RawConnector;
+  nextvalueconnector?: RawConnector;
+  defaultconnector?: RawConnector;
+  rules?: RawRule | RawRule[];
+  actionname?: string;
+  flowname?: string;
+  collectionreference?: string;
+  [key: string]: unknown;
+}
+
+interface RawFlowData {
+  start?: { connector?: RawConnector };
+  loops?: RawFlowElement | RawFlowElement[];
+  [key: string]: unknown;
+}
+
 export interface FlowElement {
   name: string;
   type: string;
@@ -15,7 +37,7 @@ export interface FlowElement {
     subflow: boolean;
   };
   nextElements: string[];
-  rawData?: any;
+  rawData?: Record<string, unknown>;
 }
 
 export interface LoopInfo {
@@ -119,21 +141,21 @@ export class SimplifiedFlowAnalyzer {
     this.visitedElements.clear();
   }
 
-  private async parseXML(xmlContent: string): Promise<any> {
+  private async parseXML(xmlContent: string): Promise<RawFlowData> {
     const parser = new xml2js.Parser({
       explicitArray: false,
       mergeAttrs: true,
       normalizeTags: true
     });
-    
-    const result = await parser.parseStringPromise(xmlContent);
-    return result.flow || result;
+
+    const result = await parser.parseStringPromise(xmlContent) as RawFlowData & { flow?: RawFlowData };
+    return (result.flow as RawFlowData) || result;
   }
 
-  private identifyElements(flowData: any): void {
+  private identifyElements(flowData: RawFlowData): void {
     const elementTypes = [
       'actioncalls',
-      'assignments', 
+      'assignments',
       'decisions',
       'loops',
       'recordlookups',
@@ -145,12 +167,13 @@ export class SimplifiedFlowAnalyzer {
     ];
 
     for (const type of elementTypes) {
-      if (flowData[type]) {
-        const elements = Array.isArray(flowData[type]) ? flowData[type] : [flowData[type]];
-        
+      const section = flowData[type];
+      if (section) {
+        const elements = Array.isArray(section) ? section as RawFlowElement[] : [section as RawFlowElement];
+
         for (const element of elements) {
           const name = this.getElementName(element);
-          
+
           this.elements.set(name, {
             name,
             type,
@@ -162,14 +185,14 @@ export class SimplifiedFlowAnalyzer {
               subflow: type === 'subflows'
             },
             nextElements: this.getNextElements(element),
-            rawData: element
+            rawData: element as Record<string, unknown>
           });
         }
       }
     }
   }
 
-  private buildExecutionPath(flowData: any): void {
+  private buildExecutionPath(flowData: RawFlowData): void {
     // Find start element
     const startElement = flowData.start?.connector?.targetreference;
     if (!startElement) {
@@ -194,10 +217,10 @@ export class SimplifiedFlowAnalyzer {
     }
   }
 
-  private identifyLoopsAndContents(flowData: any): void {
+  private identifyLoopsAndContents(flowData: RawFlowData): void {
     if (!flowData.loops) return;
-    
-    const loops = Array.isArray(flowData.loops) ? flowData.loops : [flowData.loops];
+
+    const loops = Array.isArray(flowData.loops) ? flowData.loops as RawFlowElement[] : [flowData.loops as RawFlowElement];
     
     for (const loop of loops) {
       const loopName = this.getElementName(loop);
@@ -222,7 +245,7 @@ export class SimplifiedFlowAnalyzer {
   }
 
   private markElementsInLoop(
-    elementName: string, 
+    elementName: string,
     loopInfo: LoopInfo,
     visited: Set<string>
   ): void {
@@ -274,7 +297,7 @@ export class SimplifiedFlowAnalyzer {
         }
         
         if (element.operations.apex) {
-          const actionName = element.rawData?.actionname || 'Unknown';
+          const actionName = (element.rawData?.actionname as string) || 'Unknown';
           const issue = `Apex action "${actionName}" (${elementName}) inside loop "${loopName}" - Check for bulk safety`;
           loopInfo.problematicElements.push({
             element: elementName,
@@ -285,7 +308,7 @@ export class SimplifiedFlowAnalyzer {
         }
         
         if (element.operations.subflow) {
-          const subflowName = element.rawData?.flowname || 'Unknown';
+          const subflowName = (element.rawData?.flowname as string) || 'Unknown';
           const issue = `Subflow "${subflowName}" (${elementName}) inside loop "${loopName}" - Needs deep analysis`;
           loopInfo.problematicElements.push({
             element: elementName,
@@ -301,7 +324,7 @@ export class SimplifiedFlowAnalyzer {
   private identifySubflows(): void {
     for (const [name, element] of this.elements) {
       if (element.operations.subflow) {
-        const flowName = element.rawData?.flowname || 'Unknown';
+        const flowName = (element.rawData?.flowname as string) || 'Unknown';
         this.subflows.push({
           name,
           flowName,
@@ -312,28 +335,28 @@ export class SimplifiedFlowAnalyzer {
     }
   }
 
-  private getElementName(element: any): string {
+  private getElementName(element: RawFlowElement): string {
     return element.name || 'Unknown';
   }
 
-  private getNextElements(element: any): string[] {
+  private getNextElements(element: RawFlowElement): string[] {
     const nextElements: string[] = [];
-    
+
     // Regular connector
     if (element.connector?.targetreference) {
       nextElements.push(element.connector.targetreference);
     }
-    
+
     // Loop next value connector
     if (element.nextvalueconnector?.targetreference) {
       nextElements.push(element.nextvalueconnector.targetreference);
     }
-    
+
     // Decision default connector
     if (element.defaultconnector?.targetreference) {
       nextElements.push(element.defaultconnector.targetreference);
     }
-    
+
     // Decision rules
     if (element.rules) {
       const rules = Array.isArray(element.rules) ? element.rules : [element.rules];
@@ -343,7 +366,7 @@ export class SimplifiedFlowAnalyzer {
         }
       }
     }
-    
+
     return nextElements;
   }
 

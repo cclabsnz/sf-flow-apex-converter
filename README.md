@@ -15,6 +15,11 @@ This tool automatically:
 3. **Creates** test classes for the generated code
 4. **Provides** clear recommendations for optimization
 
+## 🆕 Recent Improvements
+
+- Introduced a Flow Intermediate Representation (FlowIR) that preserves each element’s metadata so generated Apex maintains the flow’s business logic and context. This ensures functional parity between the Flow and the Apex code.
+- Added explicit detection of Apex actions inside loops and surfaced recommendations to move those actions outside loops or make them bulk-safe to comply with Salesforce best practices.
+
 ## 📦 Installation
 
 ```bash
@@ -212,7 +217,7 @@ npm run bulkify exampleflow.xml
 
 1. **Complex Logic**: The tool handles standard patterns. Complex business logic may need manual adjustment
 2. **Subflow Files**: Subflows must be in the same directory as the main flow for deep analysis
-3. **Custom Apex**: Existing Apex actions are flagged but require manual review
+3. **Custom Apex**: Existing Apex actions are flagged—especially when invoked inside loops—and require manual review to ensure bulk safety
 4. **Permissions**: Generated Apex uses `with sharing` by default
 
 ## 🤝 Contributing
