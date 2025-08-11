@@ -8,6 +8,13 @@ export enum LogLevel {
 import fs from 'fs';
 import path from 'path';
 
+interface DetailedLogEntry {
+  timestamp: string;
+  level: string;
+  context: string;
+  data: unknown;
+}
+
 const COLORS = {
   reset: '\x1b[0m',
   bright: '\x1b[1m',
@@ -42,7 +49,7 @@ export class Logger {
   private static consoleEnabled: boolean = false;
   private static logFile: string = path.join(process.cwd(), 'sf-flow-apex-converter.log');
   private static detailedLogFile: string = path.join(process.cwd(), 'sf-flow-apex-converter-details.json');
-  private static detailedLogs: any[] = [];
+  private static detailedLogs: DetailedLogEntry[] = [];
 
   static setLogLevel(level: LogLevel) {
     Logger.logLevel = level;
@@ -91,7 +98,7 @@ export class Logger {
     fs.appendFileSync(this.logFile, message + '\n');
   }
 
-  private static writeDetailedLog(level: string, context: string, data: any) {
+  private static writeDetailedLog(level: string, context: string, data: unknown) {
     const timestamp = new Date().toISOString();
     this.detailedLogs.push({
       timestamp,
@@ -106,7 +113,7 @@ export class Logger {
     );
   }
 
-  private static log(level: LogLevel, context: string, message: string, data?: any) {
+  private static log(level: LogLevel, context: string, message: string, data?: unknown) {
     if (this.shouldLog(level)) {
       const consoleMessage = this.formatConsoleMessage(level, context, message);
       const fileMessage = this.formatFileMessage(level, context, message);
@@ -134,19 +141,19 @@ export class Logger {
     }
   }
 
-  static debug(context: string, message: string, data?: any) {
+  static debug(context: string, message: string, data?: unknown) {
     this.log(LogLevel.DEBUG, context, message, data);
   }
 
-  static info(context: string, message: string, data?: any) {
+  static info(context: string, message: string, data?: unknown) {
     this.log(LogLevel.INFO, context, message, data);
   }
 
-  static warn(context: string, message: string, data?: any) {
+  static warn(context: string, message: string, data?: unknown) {
     this.log(LogLevel.WARN, context, message, data);
   }
 
-  static error(context: string, message: string, error?: Error | any) {
+  static error(context: string, message: string, error?: Error | unknown) {
     if (this.shouldLog(LogLevel.ERROR)) {
       const consoleMessage = this.formatConsoleMessage(LogLevel.ERROR, context, message);
       const fileMessage = this.formatFileMessage(LogLevel.ERROR, context, message);

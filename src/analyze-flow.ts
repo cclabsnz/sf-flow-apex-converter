@@ -2,6 +2,7 @@
 
 import { SimplifiedFlowAnalyzer } from './utils/SimplifiedFlowAnalyzer.js';
 import { Logger, LogLevel } from './utils/Logger.js';
+import { buildFlowIR } from './utils/FlowIR.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -76,6 +77,12 @@ async function analyzeFlow(flowPath: string) {
     
     fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
     console.log(`\n📄 Detailed report saved to: ${reportPath}`);
+
+    // Write intermediate representation
+    const irPath = path.join(process.cwd(), 'flow-ir.json');
+    const ir = { flows: Array.from(results.values()).map(r => buildFlowIR(r)) };
+    fs.writeFileSync(irPath, JSON.stringify(ir, null, 2));
+    console.log(`📦 Intermediate representation saved to: ${irPath}`);
     
   } catch (error) {
     console.error('❌ Analysis failed:', error);

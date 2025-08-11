@@ -3,6 +3,7 @@
 import { SimplifiedFlowAnalyzer } from './utils/SimplifiedFlowAnalyzer.js';
 import { BulkifiedApexGenerator } from './utils/BulkifiedApexGenerator.js';
 import { Logger, LogLevel } from './utils/Logger.js';
+import { buildFlowIR, FlowIR } from './utils/FlowIR.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Command } from 'commander';
@@ -38,11 +39,11 @@ program
       const analysisResults = await analyzer.analyzeSubflows(flowFile);
       
       // Get the primary flow name (without extension)
-      const primaryFlowName = path.basename(flowFile)
+      let primaryFlowName = path.basename(flowFile)
         .replace(/\.flow-meta\.xml$/, '')
         .replace(/\.flow\.xml$/, '')
         .replace(/\.xml$/, '');
-      
+
       // Try to find the flow in results
       let primaryFlow = analysisResults.get(primaryFlowName);
       
@@ -56,6 +57,9 @@ program
       if (!primaryFlow) {
         throw new Error('Failed to analyze primary flow');
       }
+
+      // Ensure primary flow name matches analysis result
+      primaryFlowName = primaryFlow.flowName;
       
       // Display analysis summary
       console.log(`\n✅ Analysis Complete:`);
@@ -72,8 +76,12 @@ program
       
       // Step 2: Generate Apex
       console.log('\n🔧 STEP 2: Generating Bulkified Apex...');
+      const flowIRs: Map<string, FlowIR> = new Map();
+      for (const [name, flow] of analysisResults) {
+        flowIRs.set(name, buildFlowIR(flow));
+      }
       const generator = new BulkifiedApexGenerator();
-      const result = generator.generateApex(analysisResults, primaryFlowName);
+      const result = generator.generateApex(flowIRs, primaryFlowName);
       
       // Step 3: Write files
       console.log('\n💾 STEP 3: Writing Generated Files...');
