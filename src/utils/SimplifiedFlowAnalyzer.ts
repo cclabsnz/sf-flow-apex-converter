@@ -333,7 +333,26 @@ export class SimplifiedFlowAnalyzer {
     if (element.defaultconnector?.targetreference) {
       nextElements.push(element.defaultconnector.targetreference);
     }
-    
+
+    // Fault connector
+    if (element.faultconnector?.targetreference) {
+      nextElements.push(element.faultconnector.targetreference);
+    }
+
+    // Multiple fault connectors (some elements support arrays)
+    if (element.faultconnectors) {
+      const faults = Array.isArray(element.faultconnectors)
+        ? element.faultconnectors
+        : [element.faultconnectors];
+      for (const fault of faults) {
+        if (fault.targetreference) {
+          nextElements.push(fault.targetreference);
+        } else if (fault.connector?.targetreference) {
+          nextElements.push(fault.connector.targetreference);
+        }
+      }
+    }
+
     // Decision rules
     if (element.rules) {
       const rules = Array.isArray(element.rules) ? element.rules : [element.rules];
