@@ -1,5 +1,4 @@
-import { FlowAnalysisResult } from './SimplifiedFlowAnalyzer.js';
-import { Logger } from './Logger.js';
+import { FlowIR } from './FlowIR.js';
 
 export interface BulkifiedApexResult {
   className: string;
@@ -11,19 +10,20 @@ export interface BulkifiedApexResult {
 export class BulkifiedApexGenerator {
   
   generateApex(
-    analysisResults: Map<string, FlowAnalysisResult>,
+    flowIRs: Map<string, FlowIR>,
     primaryFlowName: string
   ): BulkifiedApexResult {
-    const className = this.sanitizeClassName(primaryFlowName);
-    const primaryFlow = analysisResults.get(primaryFlowName);
-    
+    const primaryFlow = flowIRs.get(primaryFlowName);
+
     if (!primaryFlow) {
-      throw new Error(`Primary flow ${primaryFlowName} not found in analysis results`);
+      throw new Error(`Primary flow ${primaryFlowName} not found in IR map`);
     }
-    
-    const apexCode = this.generateApexClass(className, primaryFlow, analysisResults);
+
+    const className = this.sanitizeClassName(primaryFlow.flowName);
+
+    const apexCode = this.generateApexClass(className, primaryFlow);
     const testCode = this.generateTestClass(className);
-    const recommendations = this.generateRecommendations(primaryFlow, analysisResults);
+    const recommendations = this.generateRecommendations(primaryFlow);
     
     return {
       className,
@@ -34,22 +34,24 @@ export class BulkifiedApexGenerator {
   }
   
   private sanitizeClassName(flowName: string): string {
-    // Remove file extension and special characters
-    return flowName
+    const cleaned = flowName
       .replace(/\.(flow-meta\.xml|xml)$/i, '')
-      .replace(/[^a-zA-Z0-9]/g, '_')
-      .replace(/^[0-9]/, 'Flow_$&') // Ensure doesn't start with number
-      + '_Bulkified';
+      .replace(/[^a-zA-Z0-9]+/g, ' ');
+
+    const pascal = cleaned
+      .split(' ')
+      .filter(Boolean)
+      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+      .join('');
+
+    const prefixed = pascal.match(/^\d/) ? `Flow${pascal}` : pascal;
+    return `${prefixed}Bulkified`;
   }
   
   private generateApexClass(
     className: string,
-    primaryFlow: FlowAnalysisResult,
-    allFlows: Map<string, FlowAnalysisResult>
+    primaryFlow: FlowIR
   ): string {
-    const hasLoops = primaryFlow.loops.size > 0;
-    const hasSubflows = primaryFlow.subflows.length > 0;
-    
     return `/**
  * Auto-generated bulkified Apex class from Flow: ${primaryFlow.flowName}
  * Generated on: ${new Date().toISOString()}
@@ -164,59 +166,73 @@ public with sharing class ${className} {
 }`;
   }
   
-  private generateBulkQueries(flow: FlowAnalysisResult): string {
+  private generateBulkQueries(flow: FlowIR): string {
     const queries: string[] = [];
-    
-    // Check for record lookup elements
-    for (const [name, element] of flow.elements) {
+
+    for (const element of flow.elements) {
       if (element.operations.soql) {
         queries.push(`
-        // Query for ${name}
+        // Query for ${element.name}
         if (!recordIds.isEmpty()) {
             List<SObject> relatedRecords = [
-                SELECT Id, Name 
-                FROM Account 
+                SELECT Id, Name
+                FROM Account
                 WHERE Id IN :recordIds
             ];
-            queriedRecords.put('${name}', relatedRecords);
+            queriedRecords.put('${element.name}', relatedRecords);
         }`);
       }
     }
-    
+
     return queries.length > 0 ? queries.join('\n') : '// No queries needed';
   }
-  
-  private generateValidationLogic(flow: FlowAnalysisResult): string {
+
+  private generateValidationLogic(flow: FlowIR): string {
     const validations: string[] = [];
-    
-    // Generate validation for each subflow that was in a loop
+
     for (const subflow of flow.subflows) {
       if (subflow.isInLoop) {
         validations.push(`
         // Validation from subflow: ${subflow.flowName}
-        ValidationResult ${this.sanitizeVariableName(subflow.flowName)}Result = 
+        ValidationResult ${this.sanitizeVariableName(subflow.flowName)}Result =
             validate${this.sanitizeClassName(subflow.flowName)}(record);
-        
+
         if (!${this.sanitizeVariableName(subflow.flowName)}Result.isValid) {
             // Handle validation error
             handleValidationError(record, ${this.sanitizeVariableName(subflow.flowName)}Result);
         }`);
       }
     }
-    
+
     return validations.length > 0 ? validations.join('\n') : '// No validation logic';
   }
-  
-  private generateBusinessLogic(flow: FlowAnalysisResult): string {
-    return `
-        // Business logic implementation
-        // TODO: Implement specific business logic from flow
-        
-        // Example: Prepare record for update
-        if (record.get('Status') == 'Processing') {
-            record.put('Status', 'Processed');
-            recordsToUpdate.add(record);
-        }`;
+
+  private generateBusinessLogic(flow: FlowIR): string {
+    const lines: string[] = [];
+    lines.push('        // Business logic implementation');
+
+    for (const element of flow.elements) {
+      lines.push(`        // Element: ${element.name} (${element.type})`);
+      if (element.operations.apex) {
+        const actionName = (element.rawData?.actionname as string) || 'Unknown';
+        lines.push(`        // Apex action: ${actionName}`);
+      }
+      if (element.operations.dml) {
+        lines.push('        // DML operation present');
+      }
+      if (element.operations.soql) {
+        lines.push('        // SOQL query already handled in bulk section');
+      }
+    }
+
+    lines.push('');
+    lines.push('        // Example: Prepare record for update');
+    lines.push("        if (record.get('Status') == 'Processing') {");
+    lines.push("            record.put('Status', 'Processed');");
+    lines.push('            recordsToUpdate.add(record);');
+    lines.push('        }');
+
+    return lines.join('\n');
   }
   
   private sanitizeVariableName(name: string): string {
@@ -286,23 +302,32 @@ private class ${className}_Test {
   }
   
   private generateRecommendations(
-    primaryFlow: FlowAnalysisResult,
-    allFlows: Map<string, FlowAnalysisResult>
+    primaryFlow: FlowIR
   ): string[] {
     const recommendations: string[] = [];
-    
+
     // Add recommendations based on analysis
-    if (primaryFlow.loops.size > 0) {
+    if (primaryFlow.loops.length > 0) {
       recommendations.push('✅ Moved all SOQL queries outside of loops');
       recommendations.push('✅ Consolidated DML operations to execute after loops');
     }
-    
-    for (const [loopName, loopInfo] of primaryFlow.loops) {
-      if (loopInfo.problematicElements.length > 0) {
-        recommendations.push(`⚠️ Review loop "${loopName}": Contains ${loopInfo.problematicElements.length} operations that needed bulkification`);
+
+    for (const loop of primaryFlow.loops) {
+      if (loop.problematicElements.length > 0) {
+        recommendations.push(
+          `⚠️ Review loop "${loop.name}": Contains ${loop.problematicElements.length} operations that needed bulkification`
+        );
+
+        for (const issue of loop.problematicElements) {
+          if (issue.type === 'Apex') {
+            recommendations.push(
+              `⚠️ Apex action "${issue.element}" is executed inside loop "${loop.name}" – move it outside the loop or ensure it is bulk-safe`
+            );
+          }
+        }
       }
     }
-    
+
     for (const subflow of primaryFlow.subflows) {
       if (subflow.isInLoop) {
         recommendations.push(`📝 Subflow "${subflow.flowName}" logic has been integrated into bulk processing`);

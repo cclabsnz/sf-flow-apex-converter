@@ -6,6 +6,7 @@ import * as path from 'path';
 import { SimplifiedFlowAnalyzer } from './utils/SimplifiedFlowAnalyzer.js';
 import { BulkifiedApexGenerator } from './utils/BulkifiedApexGenerator.js';
 import { Logger, LogLevel } from './utils/Logger.js';
+import { buildFlowIR, FlowIR } from './utils/FlowIR.js';
 
 const program = new Command();
 
@@ -62,6 +63,10 @@ program
       
       fs.writeFileSync('flow-analysis-report.json', JSON.stringify(report, null, 2));
       console.log('\n📄 Report saved to: flow-analysis-report.json');
+
+      const ir = { flows: Array.from(results.values()).map(r => buildFlowIR(r)) };
+      fs.writeFileSync('flow-ir.json', JSON.stringify(ir, null, 2));
+      console.log('📦 IR saved to: flow-ir.json');
       
     } catch (error) {
       console.error('❌ Analysis failed:', error);
@@ -108,8 +113,12 @@ program
       }
       
       // Generate Apex
+      const flowIRs: Map<string, FlowIR> = new Map();
+      for (const [name, flow] of analysisResults) {
+        flowIRs.set(name, buildFlowIR(flow));
+      }
       const generator = new BulkifiedApexGenerator();
-      const result = generator.generateApex(analysisResults, primaryFlowName);
+      const result = generator.generateApex(flowIRs, primaryFlowName);
       
       // Create output directory
       const outputDir = path.resolve(options.output);

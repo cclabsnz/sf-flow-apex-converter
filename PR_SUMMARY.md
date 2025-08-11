@@ -1,9 +1,12 @@
 # Pull Request: Flow Bulkification Analysis & Generation Tool
 
 ## 🎯 Summary
-This PR introduces a complete solution for analyzing Salesforce Flows and converting them to bulkified Apex code, solving the long-standing issue of Flows hitting governor limits due to operations inside loops.
+This PR introduces a complete solution for analyzing Salesforce Flows and converting them to bulkified Apex code, solving the long-standing issue of Flows hitting governor limits due to operations inside loops. Recent updates add a Flow Intermediate Representation (FlowIR) so the generated Apex carries full business context and explicitly warns when Apex actions occur inside loops.
 
 ## 🔧 Changes Made
+
+- Added a Flow Intermediate Representation (FlowIR) to capture detailed Flow metadata and support accurate Apex generation
+- Updated recommendation engine to explicitly flag Apex actions that execute inside loops for safer bulk processing
 
 ### New Files Added
 1. **`src/utils/SimplifiedFlowAnalyzer.ts`** (150 lines)
