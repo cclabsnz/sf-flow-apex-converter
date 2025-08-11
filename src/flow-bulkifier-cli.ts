@@ -6,13 +6,14 @@ import { Logger, LogLevel } from './utils/Logger.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Command } from 'commander';
+import { version } from '../package.json';
 
 const program = new Command();
 
 program
   .name('flow-bulkifier')
   .description('Analyze and convert Salesforce Flows to bulkified Apex')
-  .version('1.0.0')
+  .version(version)
   .argument('<flow-file>', 'Path to the Flow XML file')
   .option('-o, --output <dir>', 'Output directory for generated Apex', './generated-apex')
   .option('-v, --verbose', 'Show detailed analysis')
