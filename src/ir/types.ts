@@ -31,6 +31,21 @@ export interface FlowFieldAssignment {
   value: FlowValue;
 }
 
+/**
+ * Where a lookup's result field is written back to a variable, e.g.
+ * `<outputAssignments><assignToReference>MyVar</assignToReference><field>Id</field></outputAssignments>`.
+ *
+ * Not modelled as a `FlowFieldAssignment` — that type's `value` is a value being written
+ * INTO the field (a `FlowValue` literal/reference on the DML side); here the field is the
+ * SOURCE and the reference is the DESTINATION, the opposite direction. Reusing
+ * `FlowFieldAssignment` with `{kind:'reference'}` shoehorned into `value` would read
+ * backwards at every call site, so this gets its own small type instead.
+ */
+export interface FlowOutputAssignment {
+  field: string;
+  assignToReference: string;
+}
+
 /** Body of recordLookups / recordCreates / recordUpdates / recordDeletes. */
 export interface RecordBody {
   kind: 'record';
@@ -42,6 +57,22 @@ export interface RecordBody {
   queriedFields: string[];
   getFirstRecordOnly: boolean;
   storeOutputAutomatically: boolean;
+  /** Variable a lookup's whole record (or list) is stored into, when not auto-stored per field. */
+  outputReference?: string;
+  /** Per-field output bindings, e.g. `<outputAssignments>` on a lookup with named field outputs. */
+  outputAssignments: FlowOutputAssignment[];
+  /** Variable a create/update assigns the resulting record Id to. */
+  assignRecordIdToReference?: string;
+  /** Record variable a create/update/delete takes as its whole input, instead of field-by-field. */
+  inputReference?: string;
+  /** Field a lookup sorts its query by. */
+  sortField?: string;
+  /** Sort direction Flow declares, e.g. 'Asc' / 'Desc'. */
+  sortOrder?: string;
+  /** Row limit on a lookup's query. */
+  limit?: number;
+  /** True clears the output variable(s) when the lookup finds no records, rather than leaving them untouched. */
+  assignNullValuesIfNoRecordsFound: boolean;
 }
 
 /** One branch of a decision. */
@@ -94,6 +125,8 @@ export interface LoopBody {
   bodyTarget?: string;
   /** Element reached when the collection is exhausted. */
   afterTarget?: string;
+  /** Variable holding the current item on each pass, read from `assignNextValueToReference`. */
+  iterationVariable?: string;
 }
 
 export interface SubflowBody {
@@ -101,6 +134,13 @@ export interface SubflowBody {
   flowName: string;
   inputs: FlowParameterBinding[];
   outputs: FlowParameterBinding[];
+  /**
+   * When true the subflow's output variables are stored automatically under the
+   * subflow's own name rather than only through explicit `outputAssignments` —
+   * without this an emitter cannot tell "returns nothing" from "returns something
+   * this call didn't bind to a variable".
+   */
+  storeOutputAutomatically: boolean;
 }
 
 export interface ActionBody {
@@ -109,6 +149,33 @@ export interface ActionBody {
   actionType: string;
   inputs: FlowParameterBinding[];
   outputs: FlowParameterBinding[];
+  /**
+   * When true the action's output is stored automatically (e.g. under the action's own
+   * name) rather than through explicit `outputParameters` — an empty `outputs` array
+   * alone cannot distinguish "this action returns nothing" from "this action's output
+   * is auto-stored", and the emitter needs to know which is true.
+   */
+  storeOutputAutomatically: boolean;
+  /**
+   * Generic type bindings on an Apex-invocable action, e.g. an `InvocableVariable`
+   * whose Apex type is a generic `List<SObject>` bound to a concrete SObject at
+   * design time. Read from `<dataTypeMappings>`; without this the emitter has no way
+   * to recover the concrete type argument for the generated Apex call.
+   */
+  dataTypeMappings: { typeName: string; typeValue: string }[];
+}
+
+/** Body of a collectionProcessor (e.g. FilterCollectionProcessor, SortCollectionProcessor). */
+export interface CollectionProcessorBody {
+  kind: 'collectionProcessor';
+  /** Collection variable this processor reads from. */
+  collection: string;
+  /** e.g. 'FilterCollectionProcessor', 'SortCollectionProcessor'. */
+  processorType?: string;
+  conditionLogic?: string;
+  conditions: FlowConditionIR[];
+  /** Variable holding the current item while conditions are evaluated. */
+  assignNextValueToReference?: string;
 }
 
 /** Typed body of an executable element. Absent when its kind has no parser yet. */
@@ -118,7 +185,8 @@ export type FlowBody =
   | AssignmentBody
   | LoopBody
   | SubflowBody
-  | ActionBody;
+  | ActionBody
+  | CollectionProcessorBody;
 
 /** variables, constants, formulas, textTemplates — anything declared, not executed. */
 export interface FlowDeclaration {
@@ -171,8 +239,8 @@ export interface FlowStart {
   triggerKind: string;
   object?: string;
   entryCriteria?: string;
-  /** The `<filters>` entries of the start element, raw and untranslated. */
-  filters?: Record<string, unknown>[];
+  /** The `<filters>` entries of the start element. Same field/operator/value shape as a record filter. */
+  filters?: FlowConditionIR[];
   connector?: FlowConnector;
   /** JSON view of the parsed element, for reporting a construct back to the developer. Not verbatim XML — xml2js discards source positions; raw capture arrives in Milestone 2. */
   sourceJson: string;
