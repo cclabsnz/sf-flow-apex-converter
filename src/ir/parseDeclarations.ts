@@ -44,7 +44,7 @@ export function parseDeclarations(flowData: Record<string, unknown>): FlowDeclar
         isOutput: toBool(raw.isoutput),
         expression: raw.expression === undefined ? undefined : String(raw.expression),
         value: readValue(raw.value),
-        sourceXml: JSON.stringify(raw),
+        sourceJson: JSON.stringify(raw),
       });
     }
   }

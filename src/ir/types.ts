@@ -16,7 +16,8 @@ export interface FlowDeclaration {
   /** Present for formulas and textTemplates. Flow formula syntax, untranslated. */
   expression?: string;
   value?: FlowValue;
-  sourceXml: string;
+  /** JSON view of the parsed element, for reporting a construct back to the developer. Not verbatim XML — xml2js discards source positions; raw capture arrives in Milestone 2. */
+  sourceJson: string;
 }
 
 export interface FlowConnector {
@@ -34,7 +35,8 @@ export interface FlowNode {
   connectors: FlowConnector[];
   /** Object the element operates on, where the Flow declares one. */
   object?: string;
-  sourceXml: string;
+  /** JSON view of the parsed element, for reporting a construct back to the developer. Not verbatim XML — xml2js discards source positions; raw capture arrives in Milestone 2. */
+  sourceJson: string;
   /** Everything the parser read but does not yet model, kept for the emitter. */
   raw: Record<string, unknown>;
 }
@@ -45,7 +47,8 @@ export interface FlowStart {
   object?: string;
   entryCriteria?: string;
   connector?: FlowConnector;
-  sourceXml: string;
+  /** JSON view of the parsed element, for reporting a construct back to the developer. Not verbatim XML — xml2js discards source positions; raw capture arrives in Milestone 2. */
+  sourceJson: string;
 }
 
 /** A construct the parser recognised but does not model. Never silently dropped. */
@@ -53,7 +56,8 @@ export interface UnsupportedConstruct {
   kind: string;
   name?: string;
   reason: string;
-  sourceXml: string;
+  /** JSON view of the parsed element, for reporting a construct back to the developer. Not verbatim XML — xml2js discards source positions; raw capture arrives in Milestone 2. */
+  sourceJson: string;
 }
 
 export interface FlowIR {
