@@ -5,6 +5,42 @@ import { renderType } from './types.js';
 
 const INDENT = '    ';
 
+/** Nodes that render as an infix operator expression, and so can be re-parsed. */
+function isInfix(e: ApexExpr): boolean {
+  return (
+    e.node === 'comparison' ||
+    e.node === 'equality' ||
+    e.node === 'logical' ||
+    e.node === 'nullTest'
+  );
+}
+
+/**
+ * Renders `child` for use as an operand of `parent`, parenthesised when the
+ * emitted text could re-parse into a different tree than the AST describes.
+ *
+ * This is not cosmetic. Apex binds `&&` tighter than `||` and `==` tighter than
+ * both, so joining operands with no parens silently changes meaning: the AST
+ * `(p || q) && r` emitted as `p || q && r` parses as `p || (q && r)`, which for
+ * p=true q=false r=false evaluates to true where the tree says false. That
+ * compiles cleanly, so nothing downstream catches it.
+ *
+ * The rule is deliberately blunt — parenthesise every infix operand rather than
+ * only those precedence strictly requires. Generated Apex gets read by humans
+ * reviewing a conversion, and an explicit `(a > 1) && (b != null)` costs two
+ * characters while removing any need to know Apex's precedence table. The one
+ * exception is a chain of the same logical operator, which is associative and
+ * where parens would be pure noise.
+ */
+function operand(child: ApexExpr, parent: ApexExpr): string {
+  const text = emitExpr(child);
+  if (!isInfix(child)) return text;
+  if (parent.node === 'logical' && child.node === 'logical' && child.op === parent.op) {
+    return text;
+  }
+  return `(${text})`;
+}
+
 export function emitExpr(e: ApexExpr): string {
   switch (e.node) {
     case 'literal':
@@ -16,13 +52,13 @@ export function emitExpr(e: ApexExpr): string {
       return `((${renderType(e.type)})${e.record}.get('${e.field}'))`;
     case 'comparison':
     case 'equality':
-      return `${emitExpr(e.left)} ${e.op} ${emitExpr(e.right)}`;
+      return `${operand(e.left, e)} ${e.op} ${operand(e.right, e)}`;
     case 'logical':
-      return e.operands.map(emitExpr).join(` ${e.op} `);
+      return e.operands.map((o) => operand(o, e)).join(` ${e.op} `);
     case 'nullTest':
-      return `${emitExpr(e.operand)} ${e.negated ? '!=' : '=='} null`;
+      return `${operand(e.operand, e)} ${e.negated ? '!=' : '=='} null`;
     case 'methodCall':
-      return `${emitExpr(e.target)}.${e.method}(${e.args.map(emitExpr).join(', ')})`;
+      return `${operand(e.target, e)}.${e.method}(${e.args.map(emitExpr).join(', ')})`;
   }
 }
 
