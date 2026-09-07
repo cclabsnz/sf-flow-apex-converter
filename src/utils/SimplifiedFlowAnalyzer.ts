@@ -449,21 +449,59 @@ export class SimplifiedFlowAnalyzer {
 
   /** Render a Flow decision's conditions as an Apex boolean expression. */
   convertDecisionToApex(decision: FlowDecision): string {
-    const conditions = decision.conditions.map((cond) => {
-      const leftValue = this.convertValueReference(cond.leftValue);
-      const rightValue = this.convertValueReference(cond.rightValue);
-      return `${leftValue} ${this.convertOperator(cond.operator)} ${rightValue}`;
-    });
-    return conditions.join(` ${decision.logicType.toLowerCase()} `);
+    return decision.conditions
+      .map((cond) => this.convertCondition(cond))
+      .join(` ${decision.logicType.toLowerCase()} `);
   }
 
-  /** A dotted Flow reference (Loop_over_Loans.Field__c) becomes a record field read. */
-  private convertValueReference(value: string): string {
-    if (value.includes('.')) {
-      const [, field] = value.split('.');
-      return `record.get('${field}')`;
+  /**
+   * One Flow condition as an Apex boolean expression.
+   *
+   * `record.get()` returns Object, so any operator other than ==/!= needs a cast or the
+   * generated Apex will not compile. The cast comes from the condition's declared
+   * dataType; when that is missing or unusable the condition is emitted as a TODO
+   * rather than as code that looks right and fails at deploy time.
+   */
+  private convertCondition(cond: FlowCondition): string {
+    const op = this.convertOperator(cond.operator);
+
+    // Unary operators are complete expressions — appending the right-hand value
+    // produced `x == null 1000`.
+    if (op === '== null' || op === '!= null') {
+      return `${this.convertValueReference(cond.leftValue, cond.dataType)} ${op}`;
     }
-    return value;
+
+    // String membership tests are method calls in Apex, not infix words.
+    if (op === '.contains' || op === '.startsWith' || op === '.endsWith') {
+      const left = this.convertValueReference(cond.leftValue, 'String');
+      return `${left}${op}(${this.convertValueReference(cond.rightValue, 'String')})`;
+    }
+
+    const needsCast = op !== '==' && op !== '!=';
+    if (needsCast && !this.isCastableType(cond.dataType)) {
+      return `/* TODO: cannot type "${cond.leftValue} ${cond.operator} ${cond.rightValue}" — supply the field type */ false`;
+    }
+
+    const left = this.convertValueReference(cond.leftValue, needsCast ? cond.dataType : undefined);
+    const right = this.convertValueReference(cond.rightValue, undefined);
+    return `${left} ${op} ${right}`;
+  }
+
+  private isCastableType(dataType: string | undefined): boolean {
+    return ['Decimal', 'Double', 'Integer', 'Long', 'Date', 'Datetime', 'Time', 'String'].includes(
+      dataType || ''
+    );
+  }
+
+  /**
+   * A dotted Flow reference (Loop_over_Loans.Field__c) becomes a record field read,
+   * cast when the caller knows the type it needs.
+   */
+  private convertValueReference(value: string, castTo?: string): string {
+    if (!value.includes('.')) return value;
+    const [, field] = value.split('.');
+    const read = `record.get('${field}')`;
+    return castTo ? `((${castTo})${read})` : read;
   }
 
   private convertOperator(operator: string): string {
@@ -474,7 +512,10 @@ export class SimplifiedFlowAnalyzer {
       LessThan: '<',
       GreaterThanOrEqualTo: '>=',
       LessThanOrEqualTo: '<=',
-      Contains: 'contains',
+      // Method operators carry the dot so convertCondition can render them as calls.
+      Contains: '.contains',
+      StartsWith: '.startsWith',
+      EndsWith: '.endsWith',
       IsNull: '== null',
       IsNotNull: '!= null',
     };
@@ -521,6 +562,13 @@ export class SimplifiedFlowAnalyzer {
         .join(' && ');
       code += `if (${conditions}) {\n`;
     }
+
+    // A Flow update element sets fields before saving. Dropping them collects the
+    // record for DML without making the change the Flow described.
+    const fieldWrites = Array.from(dml.fields.entries())
+      .map(([field, value]) => `record.put('${field}', ${this.convertValueReference(value)});`)
+      .join('\n');
+    if (fieldWrites) code += `${fieldWrites}\n`;
 
     switch (dml.type) {
       case 'insert': code += `recordsToInsert.add(record);`; break;
