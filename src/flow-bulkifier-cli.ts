@@ -73,7 +73,9 @@ program
       
       // Step 2: Generate Apex
       console.log('\n🔧 STEP 2: Generating Bulkified Apex...');
-      const generator = new BulkifiedApexGenerator();
+      // Share the analyzer: the generator resolves decision branch targets through
+    // its element map, which is only populated after the analyzer has run.
+    const generator = new BulkifiedApexGenerator(analyzer);
       const result = generator.generateApex(analysisResults, primaryFlowName);
       
       // Step 3: Write files
