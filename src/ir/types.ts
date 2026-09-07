@@ -25,6 +25,25 @@ export interface FlowConditionIR {
   right: FlowValue;
 }
 
+/** A field write on a record create or update. */
+export interface FlowFieldAssignment {
+  field: string;
+  value: FlowValue;
+}
+
+/** Body of recordLookups / recordCreates / recordUpdates / recordDeletes. */
+export interface RecordBody {
+  kind: 'record';
+  object?: string;
+  filterLogic?: string;
+  filters: FlowConditionIR[];
+  inputAssignments: FlowFieldAssignment[];
+  /** Fields the lookup asks for. Empty means the Flow did not restrict them. */
+  queriedFields: string[];
+  getFirstRecordOnly: boolean;
+  storeOutputAutomatically: boolean;
+}
+
 /** variables, constants, formulas, textTemplates — anything declared, not executed. */
 export interface FlowDeclaration {
   name: string;
