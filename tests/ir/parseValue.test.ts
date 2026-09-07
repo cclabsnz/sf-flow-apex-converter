@@ -11,6 +11,17 @@ describe('toArray', () => {
     expect(toArray(undefined)).toEqual([]);
     expect(toArray(null)).toEqual([]);
   });
+
+  // toArray's declared return type is Record<string, unknown>[], but queriedFields is
+  // an example of a Flow field whose entries are bare strings, not objects — runtime
+  // behaviour is correct (it wraps/passes through whatever it is given), the cast is
+  // just not type-sound for every caller. These cases exercise that caller.
+  it('wraps a single bare string, as a single queriedFields entry arrives from xml2js', () => {
+    expect(toArray('Id')).toEqual(['Id']);
+  });
+  it('passes an array of bare strings through, as multiple queriedFields entries arrive', () => {
+    expect(toArray(['Id', 'Name'])).toEqual(['Id', 'Name']);
+  });
 });
 
 describe('readValue', () => {
@@ -22,6 +33,13 @@ describe('readValue', () => {
   it('reads an element reference', () => {
     expect(readValue({ elementreference: 'Loop_over_Loans.Amount__c' }))
       .toEqual({ kind: 'reference', raw: 'Loop_over_Loans.Amount__c' });
+  });
+  it('reads a date value', () => {
+    expect(readValue({ datevalue: '2026-01-01' })).toEqual({ kind: 'date', raw: '2026-01-01' });
+  });
+  it('reads a datetime value', () => {
+    expect(readValue({ datetimevalue: '2026-01-01T00:00:00.000Z' }))
+      .toEqual({ kind: 'datetime', raw: '2026-01-01T00:00:00.000Z' });
   });
   it('returns kind none for an absent container', () => {
     expect(readValue(undefined)).toEqual({ kind: 'none' });
