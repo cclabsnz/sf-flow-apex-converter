@@ -75,29 +75,39 @@ program
   .description('Report what the intermediate representation understands about a Flow')
   .option('--json', 'Emit the coverage summary as JSON')
   .action(async (flowFile: string, options: { json?: boolean }) => {
-    const { parseFlowFile } = await import('./ir/parseFlow.js');
-    const { summariseCoverage } = await import('./ir/coverage.js');
-
-    const ir = await parseFlowFile(flowFile);
-    const summary = summariseCoverage(ir);
-
-    if (options.json) {
-      console.log(JSON.stringify(summary, null, 2));
-      return;
+    if (!fs.existsSync(flowFile)) {
+      console.error(`❌ Flow file not found: ${flowFile}`);
+      process.exit(1);
     }
 
-    console.log(`\nFlow: ${summary.flowName}`);
-    console.log(`  Elements understood:  ${summary.nodeCount}`);
-    console.log(`  Declarations read:    ${summary.declarationCount}`);
-    if (summary.unsupported.length === 0) {
-      console.log(`  Nothing unsupported.\n`);
-      return;
+    try {
+      const { parseFlowFile } = await import('./ir/parseFlow.js');
+      const { summariseCoverage } = await import('./ir/coverage.js');
+
+      const ir = await parseFlowFile(flowFile);
+      const summary = summariseCoverage(ir);
+
+      if (options.json) {
+        console.log(JSON.stringify(summary, null, 2));
+        return;
+      }
+
+      console.log(`\nFlow: ${summary.flowName}`);
+      console.log(`  Elements understood:  ${summary.nodeCount}`);
+      console.log(`  Declarations read:    ${summary.declarationCount}`);
+      if (summary.unsupported.length === 0) {
+        console.log(`  Nothing unsupported.\n`);
+        return;
+      }
+      console.log(`  Not modelled (${summary.unsupported.length}):`);
+      for (const u of summary.unsupported) {
+        console.log(`    ${u.kind}/${u.name ?? '?'} — ${u.reason}`);
+      }
+      console.log('');
+    } catch (error) {
+      console.error('❌ IR parsing failed:', error);
+      process.exit(1);
     }
-    console.log(`  Not modelled (${summary.unsupported.length}):`);
-    for (const u of summary.unsupported) {
-      console.log(`    ${u.kind}/${u.name ?? '?'} — ${u.reason}`);
-    }
-    console.log('');
   });
 
 // Bulkify command

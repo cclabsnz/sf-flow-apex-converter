@@ -1,6 +1,17 @@
 /** A literal value as Flow expresses it, before any Apex typing decision. */
 export interface FlowValue {
-  kind: 'string' | 'number' | 'boolean' | 'date' | 'datetime' | 'reference' | 'none';
+  kind:
+    | 'string'
+    | 'number'
+    | 'boolean'
+    | 'date'
+    | 'datetime'
+    | 'reference'
+    | 'apex'
+    | 'sobject'
+    | 'formula'
+    | 'setupReference'
+    | 'none';
   /** Raw text of the literal, or the referenced name when kind === 'reference'. */
   raw?: string;
 }
@@ -13,9 +24,17 @@ export interface FlowDeclaration {
   isCollection: boolean;
   isInput: boolean;
   isOutput: boolean;
-  /** Present for formulas and textTemplates. Flow formula syntax, untranslated. */
+  /**
+   * The declaration's body, untranslated Flow syntax. For a formula this is
+   * `<expression>`. For a textTemplate — which the Flow metadata schema gives no
+   * `expression` or `dataType` field at all — this is `<text>`, the template body.
+   */
   expression?: string;
   value?: FlowValue;
+  /** The real SObject type for a variable/collection whose dataType is 'SObject'. Read from `<objectType>`. */
+  objectType?: string;
+  /** The Apex class for a variable whose dataType is 'Apex'. Read from `<apexClass>`. */
+  apexClass?: string;
   /** JSON view of the parsed element, for reporting a construct back to the developer. Not verbatim XML — xml2js discards source positions; raw capture arrives in Milestone 2. */
   sourceJson: string;
 }
@@ -46,6 +65,8 @@ export interface FlowStart {
   triggerKind: string;
   object?: string;
   entryCriteria?: string;
+  /** The `<filters>` entries of the start element, raw and untranslated. */
+  filters?: Record<string, unknown>[];
   connector?: FlowConnector;
   /** JSON view of the parsed element, for reporting a construct back to the developer. Not verbatim XML — xml2js discards source positions; raw capture arrives in Milestone 2. */
   sourceJson: string;
@@ -63,6 +84,8 @@ export interface UnsupportedConstruct {
 export interface FlowIR {
   flowName: string;
   processType: string;
+  /** Determines `with sharing` vs `without sharing` in generated Apex. Read from `<runInMode>`. */
+  runInMode?: string;
   start?: FlowStart;
   declarations: FlowDeclaration[];
   nodes: FlowNode[];

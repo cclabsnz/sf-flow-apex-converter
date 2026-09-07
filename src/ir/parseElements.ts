@@ -24,6 +24,8 @@ const KNOWN_UNMODELLED = [
   'transforms',
   'apexplugincalls',
   'recordrollbacks',
+  'choices',
+  'dynamicchoicesets',
 ];
 
 /**
@@ -34,7 +36,7 @@ const KNOWN_UNMODELLED = [
 const FLOW_METADATA_KEYS = new Set([
   'label', 'interviewlabel', 'processtype', 'status', 'apiversion', 'description',
   'processmetadatavalues', 'start', 'variables', 'constants', 'formulas',
-  'texttemplates', 'choices', 'dynamicchoicesets', 'sourcetemplate', 'environments',
+  'texttemplates', 'sourcetemplate', 'environments',
   'runinmode', 'timezonesidkey', 'triggerorder', '$', 'xmlns',
 ]);
 
@@ -80,12 +82,12 @@ export function parseElements(flowData: Record<string, unknown>): {
     const modelled = MODELLED_ELEMENT_TYPES.includes(key);
 
     for (const raw of toArray(value)) {
-      if (raw.name === undefined) continue; // not an element shape
-
       if (!modelled) {
+        // Even a malformed/nameless entry under an unmodelled type must be recorded,
+        // not skipped — a missing name here does not mean "not an element".
         unsupported.push({
           kind: key,
-          name: String(raw.name),
+          name: raw.name === undefined ? undefined : String(raw.name),
           reason: KNOWN_UNMODELLED.includes(key)
             ? `Flow element type "${key}" is not modelled by the IR yet`
             : `Unrecognised Flow element type "${key}"`,
@@ -93,6 +95,8 @@ export function parseElements(flowData: Record<string, unknown>): {
         });
         continue;
       }
+
+      if (raw.name === undefined) continue; // a modelled type with no name is not element-shaped
 
       nodes.push({
         name: String(raw.name),
