@@ -335,14 +335,11 @@ public with sharing class ${className} {
   
   private generateBusinessLogic(flow: FlowAnalysisResult): string {
     return `
-        // Business logic implementation
-        // TODO: Implement specific business logic from flow
-        
-        // Example: Prepare record for update
-        if (record.get('Status') == 'Processing') {
-            record.put('Status', 'Processed');
-            recordsToUpdate.add(record);
-        }`;
+        // TODO: the Flow's per-record business logic has NOT been migrated.
+        // This method is a bulk-safe skeleton: queries and DML have been lifted out
+        // of the loop for you, but the work the loop body actually did is still
+        // yours to write. Add records to recordsToInsert / recordsToUpdate /
+        // recordsToDelete here; they are committed once, after the loop.`;
   }
   
   private sanitizeVariableName(name: string): string {
@@ -431,11 +428,12 @@ private class ${className}_Test {
     
     for (const subflow of primaryFlow.subflows) {
       if (subflow.isInLoop) {
-        recommendations.push(`📝 Subflow "${subflow.flowName}" logic has been integrated into bulk processing`);
+        recommendations.push(`📝 Subflow "${subflow.flowName}" has a validation method stub — its logic is NOT migrated, only its parameters are mapped`);
       }
     }
     
-    recommendations.push('🔍 Review the generated Apex code and customize business logic as needed');
+    recommendations.push('⚠️ This is a bulk-safe skeleton, not a finished conversion — the loop body\'s business logic is not migrated');
+    recommendations.push('🔍 Review the generated Apex and implement the business logic marked TODO');
     recommendations.push('🧪 Add comprehensive test cases for your specific business scenarios');
     recommendations.push('📊 Monitor governor limit usage in production');
     

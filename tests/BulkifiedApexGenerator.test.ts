@@ -120,4 +120,26 @@ describe('BulkifiedApexGenerator', () => {
       }
     });
   });
+
+  describe('honesty of the output', () => {
+    test('does not invent business logic the Flow never described', () => {
+      // 2.0.x emitted a Status == 'Processing' -> 'Processed' block for every Flow,
+      // whether or not the Flow had a Status field. Scaffolding is fine; scaffolding
+      // that looks like extracted business rules is not.
+      expect(generated).not.toContain("record.get('Status') == 'Processing'");
+      expect(generated).not.toContain("record.put('Status', 'Processed')");
+    });
+
+    test('marks the un-migrated body as unimplemented', () => {
+      expect(generated).toMatch(/TODO|not been (migrated|translated)/i);
+    });
+
+    test('does not claim subflow logic was integrated when it was not', () => {
+      const analyzer2 = new SimplifiedFlowAnalyzer();
+      const generator2 = new BulkifiedApexGenerator(analyzer2);
+      const recs = generator2.generateApex(analysis, 'exampleflow').recommendations;
+      const claims = recs.filter((r) => /has been integrated/i.test(r));
+      expect(claims).toEqual([]);
+    });
+  });
 });
