@@ -47,4 +47,40 @@ describe('parseDecisionBody', () => {
   it('yields an empty rule list for a decision with none', () => {
     expect(parseDecisionBody({ name: 'D' }).rules).toEqual([]);
   });
+
+  it('preserves rule order for a multi-rule decision, since order is if/else-if branch precedence', () => {
+    // Every decision in exampleflow.xml has exactly one <rules>, so toArray's array
+    // branch never executes there and nothing asserts order is preserved. Two rules
+    // here, in a realistic if/else-if shape (a first-match-wins bulkification check).
+    const decision = {
+      name: 'Check_Amount_Tier',
+      rules: [
+        {
+          name: 'High_Amount',
+          label: 'High Amount',
+          conditionlogic: 'and',
+          conditions: [
+            { leftvaluereference: 'Loop_over_Loans.LLC_BI__Amount__c', operator: 'GreaterThan', rightvalue: { numbervalue: 1000000 } },
+          ],
+          connector: { targetreference: 'Flag_High_Amount' },
+        },
+        {
+          name: 'Medium_Amount',
+          label: 'Medium Amount',
+          conditionlogic: 'and',
+          conditions: [
+            { leftvaluereference: 'Loop_over_Loans.LLC_BI__Amount__c', operator: 'GreaterThan', rightvalue: { numbervalue: 100000 } },
+          ],
+          connector: { targetreference: 'Flag_Medium_Amount' },
+        },
+      ],
+      defaultconnector: { targetreference: 'Continue' },
+    };
+
+    const rules = parseDecisionBody(decision).rules;
+    expect(rules).toHaveLength(2);
+    expect(rules.map((r) => r.name)).toEqual(['High_Amount', 'Medium_Amount']);
+    expect(rules[0].target).toBe('Flag_High_Amount');
+    expect(rules[1].target).toBe('Flag_Medium_Amount');
+  });
 });
