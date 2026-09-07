@@ -66,4 +66,56 @@ describe('parseRecordBody', () => {
     expect(body.filters).toEqual([]);
     expect(body.inputAssignments).toEqual([]);
   });
+
+  it('reads assignNullValuesIfNoRecordsFound from the real lookup', () => {
+    // Real shape from exampleflow.xml:421 — Get_Pricing_Streams_for_Loans.
+    const body = parseRecordBody({
+      ...lookup,
+      assignnullvaluesifnorecordsfound: 'false',
+    });
+    expect(body.assignNullValuesIfNoRecordsFound).toBe(false);
+
+    const strictLookup = parseRecordBody({
+      ...lookup,
+      assignnullvaluesifnorecordsfound: 'true',
+    });
+    expect(strictLookup.assignNullValuesIfNoRecordsFound).toBe(true);
+  });
+
+  it('reads a create that takes a whole record variable via inputReference, not per-field assignments', () => {
+    // Synthetic but realistic: a recordCreates element that assigns a single
+    // pre-built record variable instead of field-by-field inputAssignments — a shape
+    // this Flow's own recordLookups/recordCreates elements do not happen to use, but
+    // one the Flow metadata schema supports for every record element.
+    const body = parseRecordBody({
+      object: 'LLC_BI__Loan__c',
+      inputreference: 'NewLoanRecord',
+    });
+    expect(body.inputReference).toBe('NewLoanRecord');
+    expect(body.inputAssignments).toEqual([]);
+  });
+
+  it('reads the output side of a lookup: where the result and its Id land, and sort/limit', () => {
+    const body = parseRecordBody({
+      object: 'LLC_BI__Pricing_Stream__c',
+      outputreference: 'FoundPricingStreams',
+      assignrecordidtoreference: 'NewRecordId',
+      sortfield: 'CreatedDate',
+      sortorder: 'Desc',
+      limit: '5',
+      outputassignments: [
+        { field: 'Id', assigntoreference: 'FoundId' },
+        { field: 'Name', assigntoreference: 'FoundName' },
+      ],
+    });
+    expect(body.outputReference).toBe('FoundPricingStreams');
+    expect(body.assignRecordIdToReference).toBe('NewRecordId');
+    expect(body.sortField).toBe('CreatedDate');
+    expect(body.sortOrder).toBe('Desc');
+    expect(body.limit).toBe(5);
+    expect(body.outputAssignments).toEqual([
+      { field: 'Id', assignToReference: 'FoundId' },
+      { field: 'Name', assignToReference: 'FoundName' },
+    ]);
+  });
 });
