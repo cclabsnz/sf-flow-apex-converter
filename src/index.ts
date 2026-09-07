@@ -94,6 +94,7 @@ program
 
       console.log(`\nFlow: ${summary.flowName}`);
       console.log(`  Elements understood:  ${summary.nodeCount}`);
+      console.log(`  Typed bodies:         ${summary.typedBodies} of ${summary.nodeCount}`);
       console.log(`  Declarations read:    ${summary.declarationCount}`);
       if (summary.unsupported.length === 0) {
         console.log(`  Nothing unsupported.\n`);

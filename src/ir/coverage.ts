@@ -4,6 +4,7 @@ export interface CoverageSummary {
   flowName: string;
   nodeCount: number;
   declarationCount: number;
+  typedBodies: number;
   unsupported: { kind: string; name?: string; reason: string }[];
 }
 
@@ -13,6 +14,7 @@ export function summariseCoverage(ir: FlowIR): CoverageSummary {
     flowName: ir.flowName,
     nodeCount: ir.nodes.length,
     declarationCount: ir.declarations.length,
+    typedBodies: ir.nodes.filter((n) => n.body !== undefined).length,
     unsupported: ir.unsupported.map(({ kind, name, reason }) => ({ kind, name, reason })),
   };
 }

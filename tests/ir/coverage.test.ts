@@ -20,6 +20,7 @@ describe('summariseCoverage', () => {
     const s = summariseCoverage(ir);
     expect(s.nodeCount).toBe(1);
     expect(s.declarationCount).toBe(1);
+    expect(s.typedBodies).toBe(0);
   });
 
   it('lists every unsupported construct with its reason', () => {
