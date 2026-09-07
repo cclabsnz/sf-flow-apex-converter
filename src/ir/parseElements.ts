@@ -1,3 +1,4 @@
+import { parseBody } from './bodies/index.js';
 import { FlowConnector, FlowNode, UnsupportedConstruct } from './types.js';
 
 /** Executable element types the IR models. */
@@ -104,6 +105,7 @@ export function parseElements(flowData: Record<string, unknown>): {
         label: raw.label === undefined ? undefined : String(raw.label),
         connectors: collectConnectors(raw),
         object: raw.object === undefined ? undefined : String(raw.object),
+        body: parseBody(key, raw),
         sourceJson: JSON.stringify(raw),
         raw,
       });
