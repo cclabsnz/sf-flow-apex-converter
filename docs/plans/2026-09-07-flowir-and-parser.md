@@ -14,7 +14,10 @@
 
 - TypeScript `strict: true`. No `any` in exported signatures; `unknown` plus a narrowing guard instead.
 - xml2js is configured `{ explicitArray: false, mergeAttrs: true, normalizeTags: true }`. **All tags arrive lowercased**, and a single occurrence is an object, not an array. Every parser must handle both shapes.
-- Every IR node retains `sourceXml`: the raw fragment it was built from. This is what lets the emitter report a construct back to the developer verbatim.
+- Every IR node retains `sourceJson`: a JSON view of the parsed element, so a construct can
+  be reported back to the developer. It is **not** verbatim XML — xml2js discards source
+  positions, so true raw capture needs a separate extraction pass and lands in Milestone 2
+  alongside the emitter, which is the first consumer that needs verbatim quoting.
 - Nothing is dropped silently. An element type the parser does not model is recorded in `FlowIR.unsupported`, never ignored.
 - Tests use the committed `exampleflow.xml` where a realistic fixture helps, and inline XML strings where a focused one is clearer.
 - Existing tests must keep passing: `npx jest` is 25 tests / 3 suites before this plan starts.
@@ -67,7 +70,7 @@ export interface FlowDeclaration {
   /** Present for formulas and textTemplates. Flow formula syntax, untranslated. */
   expression?: string;
   value?: FlowValue;
-  sourceXml: string;
+  sourceJson: string;
 }
 
 export interface FlowConnector {
@@ -85,7 +88,7 @@ export interface FlowNode {
   connectors: FlowConnector[];
   /** Object the element operates on, where the Flow declares one. */
   object?: string;
-  sourceXml: string;
+  sourceJson: string;
   /** Everything the parser read but does not yet model, kept for the emitter. */
   raw: Record<string, unknown>;
 }
@@ -96,7 +99,7 @@ export interface FlowStart {
   object?: string;
   entryCriteria?: string;
   connector?: FlowConnector;
-  sourceXml: string;
+  sourceJson: string;
 }
 
 /** A construct the parser recognised but does not model. Never silently dropped. */
@@ -104,7 +107,7 @@ export interface UnsupportedConstruct {
   kind: string;
   name?: string;
   reason: string;
-  sourceXml: string;
+  sourceJson: string;
 }
 
 export interface FlowIR {
@@ -261,7 +264,7 @@ export function parseDeclarations(flowData: Record<string, unknown>): FlowDeclar
         isOutput: toBool(raw.isoutput),
         expression: raw.expression === undefined ? undefined : String(raw.expression),
         value: readValue(raw.value),
-        sourceXml: JSON.stringify(raw),
+        sourceJson: JSON.stringify(raw),
       });
     }
   }
@@ -371,7 +374,7 @@ export function parseStart(flowData: Record<string, unknown>): FlowStart | undef
     connector: connectorRaw
       ? { target: String(connectorRaw.targetreference), isFault: false }
       : undefined,
-    sourceXml: JSON.stringify(raw),
+    sourceJson: JSON.stringify(raw),
   };
 }
 ```
@@ -585,7 +588,7 @@ export function parseElements(flowData: Record<string, unknown>): {
           reason: KNOWN_UNMODELLED.includes(key)
             ? `Flow element type "${key}" is not modelled by the IR yet`
             : `Unrecognised Flow element type "${key}"`,
-          sourceXml: JSON.stringify(raw),
+          sourceJson: JSON.stringify(raw),
         });
         continue;
       }
@@ -596,7 +599,7 @@ export function parseElements(flowData: Record<string, unknown>): {
         label: raw.label === undefined ? undefined : String(raw.label),
         connectors: collectConnectors(raw),
         object: raw.object === undefined ? undefined : String(raw.object),
-        sourceXml: JSON.stringify(raw),
+        sourceJson: JSON.stringify(raw),
         raw,
       });
     }
@@ -690,7 +693,7 @@ describe('parseFlowXml against the bundled example Flow', () => {
 
   it('retains source XML on every node, so any construct can be quoted back', () => {
     for (const node of ir.nodes) {
-      expect(node.sourceXml.length).toBeGreaterThan(0);
+      expect(node.sourceJson.length).toBeGreaterThan(0);
     }
   });
 });
@@ -795,13 +798,13 @@ const ir: FlowIR = {
   flowName: 'MyFlow',
   processType: 'AutoLaunchedFlow',
   declarations: [
-    { name: 'V', kind: 'variable', dataType: 'String', isCollection: false, isInput: false, isOutput: false, sourceXml: '{}' },
+    { name: 'V', kind: 'variable', dataType: 'String', isCollection: false, isInput: false, isOutput: false, sourceJson: '{}' },
   ],
   nodes: [
-    { name: 'Lookup', kind: 'recordlookups', connectors: [], sourceXml: '{}', raw: {} },
+    { name: 'Lookup', kind: 'recordlookups', connectors: [], sourceJson: '{}', raw: {} },
   ],
   unsupported: [
-    { kind: 'screens', name: 'Confirm', reason: 'Flow element type "screens" is not modelled by the IR yet', sourceXml: '{}' },
+    { kind: 'screens', name: 'Confirm', reason: 'Flow element type "screens" is not modelled by the IR yet', sourceJson: '{}' },
   ],
 };
 
@@ -821,7 +824,7 @@ describe('summariseCoverage', () => {
 
   it('drops the source XML, which is for the emitter and not for a summary', () => {
     const s = summariseCoverage(ir) as unknown as Record<string, unknown>;
-    expect(JSON.stringify(s)).not.toContain('sourceXml');
+    expect(JSON.stringify(s)).not.toContain('sourceJson');
   });
 });
 ```
