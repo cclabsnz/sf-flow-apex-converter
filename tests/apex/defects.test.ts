@@ -30,13 +30,25 @@ describe('defects that are now unrepresentable', () => {
     // Shipped as: a contains 'x'
     const only = methodCall(variable(STRING, 'name'), 'contains', [literal(STRING, "'x'")], STRING);
     expect(emitExpr(only)).toBe("name.contains('x')");
-    // There is no operator named 'contains' anywhere in the expression union;
-    // comparison() accepts only the four ordering operators, enforced by its type.
+
+    // The guarantee is a type-level one, so assert it at the type level. If
+    // OrderingOperator ever widened to admit 'contains', @ts-expect-error would
+    // become an unused directive and ts-jest fails the suite on it — so this
+    // line breaks in BOTH directions, which a runtime assertion cannot do.
+    // @ts-expect-error 'contains' is not an OrderingOperator
+    expect(() => comparison(variable(STRING, 'a'), 'contains', literal(STRING, "'x'")))
+      .toThrow();
   });
 
   test("DEFECT 2b: a null test cannot carry a dangling right-hand value", () => {
     // Shipped as: x == null 1000
     expect(emitExpr(nullTest(variable(STRING, 'x'), false))).toBe('x == null');
+
+    // nullTest is unary by construction — there is no third parameter for a
+    // dangling operand to occupy. Pinned at the type level for the same reason
+    // as DEFECT 2: a runtime assertion on the good path proves nothing here.
+    // @ts-expect-error nullTest takes no right-hand operand
+    nullTest(variable(STRING, 'x'), false, literal(DECIMAL, '1000'));
   });
 
   test('DEFECT 3: a query cannot be built without naming its object', () => {
