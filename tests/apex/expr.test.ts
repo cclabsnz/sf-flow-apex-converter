@@ -71,6 +71,9 @@ describe('methodCall', () => {
     // There is no infix operator to misuse, so `a contains 'x'` cannot be built.
     const e = methodCall(variable(STRING, 'name'), 'contains', [literal(STRING, "'x'")], BOOLEAN);
     expect(e.node).toBe('methodCall');
+    // Narrow before reading a variant-specific field: methodCall returns the
+    // ApexExpr union, like every other constructor in this module.
+    if (e.node !== 'methodCall') throw new Error('expected a methodCall node');
     expect(e.method).toBe('contains');
   });
 });
