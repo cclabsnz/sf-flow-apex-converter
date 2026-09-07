@@ -76,6 +76,41 @@ export interface AssignmentBody {
   items: FlowAssignmentItem[];
 }
 
+/** An input or output binding on a subflow or action call. */
+export interface FlowParameterBinding {
+  name: string;
+  /** Value passed in. `kind: 'none'` for an output binding. */
+  value: FlowValue;
+  /** Where an output binding's result is stored. Undefined for inputs. */
+  target?: string;
+}
+
+export interface LoopBody {
+  kind: 'loop';
+  /** Collection the loop iterates. */
+  collection: string;
+  iterationOrder?: string;
+  /** First element of the loop body. */
+  bodyTarget?: string;
+  /** Element reached when the collection is exhausted. */
+  afterTarget?: string;
+}
+
+export interface SubflowBody {
+  kind: 'subflow';
+  flowName: string;
+  inputs: FlowParameterBinding[];
+  outputs: FlowParameterBinding[];
+}
+
+export interface ActionBody {
+  kind: 'action';
+  actionName: string;
+  actionType: string;
+  inputs: FlowParameterBinding[];
+  outputs: FlowParameterBinding[];
+}
+
 /** variables, constants, formulas, textTemplates — anything declared, not executed. */
 export interface FlowDeclaration {
   name: string;
