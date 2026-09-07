@@ -1,4 +1,8 @@
-import { FlowAnalysisResult } from './SimplifiedFlowAnalyzer.js';
+import {
+  FlowAnalysisResult,
+  FlowParameter,
+  SimplifiedFlowAnalyzer,
+} from './SimplifiedFlowAnalyzer.js';
 import { Logger } from './Logger.js';
 
 export interface BulkifiedApexResult {
@@ -9,7 +13,16 @@ export interface BulkifiedApexResult {
 }
 
 export class BulkifiedApexGenerator {
-  
+  private analyzer: SimplifiedFlowAnalyzer;
+
+  /**
+   * @param analyzer  supplies Flow-to-Apex conversion. Injectable so the generator
+   *                  can be tested without parsing a Flow file first.
+   */
+  constructor(analyzer?: SimplifiedFlowAnalyzer) {
+    this.analyzer = analyzer || new SimplifiedFlowAnalyzer();
+  }
+
   generateApex(
     analysisResults: Map<string, FlowAnalysisResult>,
     primaryFlowName: string
@@ -188,24 +201,112 @@ public with sharing class ${className} {
   
   private generateValidationLogic(flow: FlowAnalysisResult): string {
     const validations: string[] = [];
-    
-    // Generate validation for each subflow that was in a loop
+
+    // The generated class needs these before any validation method references them.
+    validations.push(`
+    private class ValidationResult {
+        public Boolean isValid = true;
+        public String message;
+        public String solution;
+        public String fieldName;
+        public Id recordId;
+        public String recordName;
+    }`);
+
+    validations.push(`
+    private void handleValidationError(SObject record, ValidationResult result) {
+        if (result.recordId == null) {
+            result.recordId = (Id)record.get('Id');
+        }
+        if (result.recordName == null) {
+            result.recordName = (String)record.get('Name');
+        }
+        // Add error to record
+        record.addError(result.message + (result.solution != null ? '\\n' + result.solution : ''));
+    }`);
+
+    // One validation method per in-loop subflow.
+    for (const subflow of flow.subflows) {
+      const element = flow.elements.get(subflow.name);
+      if (!element || !subflow.isInLoop) continue;
+
+      const methodName = `validate${this.sanitizeClassName(subflow.flowName)}_Bulkified`;
+      const params = element.inputParameters || [];
+
+      validations.push(`
+    private ValidationResult ${methodName}(SObject record) {
+        ValidationResult result = new ValidationResult();
+        result.isValid = true;
+        
+        try {
+            // Extract input parameters
+            ${this.generateParameterExtractions(params)}
+            
+            // Validation rules
+            ${element.decisions?.map((decision) => `
+            // ${decision.name}
+            if (${this.analyzer.convertDecisionToApex(decision)}) {
+                ${element.assignments?.filter((a) => a.variable.toLowerCase().includes('error') ||
+                a.variable.toLowerCase().includes('message'))
+                .map((a) => this.analyzer.convertAssignmentToApex(a))
+                .join('\n                ')}
+                result.isValid = false;
+                return result;
+            }
+            `).join('\n') || '// No validation rules defined'}
+
+            // Process DML operations
+            ${element.dmlOperations?.map((dml) => this.analyzer.convertDMLToApex(dml)).join('\n            ') || ''}
+
+            // Process outputs
+            ${this.analyzer.processSubflowOutputs(element)}
+            
+        } catch (Exception e) {
+            result.isValid = false;
+            result.message = 'Validation error: ' + e.getMessage();
+            result.solution = 'Review the record data and try again';
+            return result;
+        }
+        
+        return result;
+    }`);
+    }
+
+    // Call sites, emitted into the per-record processing body.
     for (const subflow of flow.subflows) {
       if (subflow.isInLoop) {
         validations.push(`
         // Validation from subflow: ${subflow.flowName}
         ValidationResult ${this.sanitizeVariableName(subflow.flowName)}Result = 
-            validate${this.sanitizeClassName(subflow.flowName)}(record);
+            validate${this.sanitizeClassName(subflow.flowName)}_Bulkified(record);
         
         if (!${this.sanitizeVariableName(subflow.flowName)}Result.isValid) {
-            // Handle validation error
             handleValidationError(record, ${this.sanitizeVariableName(subflow.flowName)}Result);
+            return; // Stop processing on validation failure
         }`);
       }
     }
-    
+
     return validations.length > 0 ? validations.join('\n') : '// No validation logic';
   }
+
+  /**
+   * Turn a subflow's input parameters into typed field reads off the record.
+   * A parameter without a resolvable field mapping is emitted as a comment rather
+   * than a guess — a wrong cast would compile and then fail at runtime.
+   */
+  private generateParameterExtractions(params: FlowParameter[]): string {
+    return params
+      .map((param) => {
+        if (param.fieldMapping) {
+          const { sourceField, dataType } = param.fieldMapping;
+          return `${dataType} ${this.sanitizeVariableName(param.name)} = (${dataType})record.get('${sourceField}');`;
+        }
+        return `// Parameter ${param.name} needs manual mapping`;
+      })
+      .join('\n            ');
+  }
+
   
   private generateBusinessLogic(flow: FlowAnalysisResult): string {
     return `

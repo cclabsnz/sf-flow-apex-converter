@@ -3,6 +3,63 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Logger } from './Logger.js';
 
+export interface FlowFieldMapping {
+  sourceField: string;
+  targetField: string;
+  dataType: string;
+  isCollection: boolean;
+  objectType?: string;
+}
+
+export interface FlowCondition {
+  leftValue: string;
+  operator: string;
+  rightValue: string;
+  dataType: string;
+}
+
+export interface FlowValidationRule {
+  name: string;
+  conditions: FlowCondition[];
+  logicType: 'AND' | 'OR';
+  errorMessage?: string;
+  errorSolution?: string;
+  nextElementOnTrue?: string;
+  nextElementOnFalse?: string;
+}
+
+export interface FlowParameter {
+  name: string;
+  dataType: string;
+  value?: string;
+  elementReference?: string;
+  fieldMapping?: FlowFieldMapping;
+  validationRules?: FlowValidationRule[];
+}
+
+export interface FlowAssignment {
+  variable: string;
+  operator: string;
+  value: string;
+  dataType: string;
+  isCollection: boolean;
+}
+
+export interface FlowDecision {
+  name: string;
+  conditions: FlowCondition[];
+  logicType: 'AND' | 'OR';
+  nextElementOnTrue?: string;
+  nextElementOnFalse?: string;
+}
+
+export interface FlowDMLOperation {
+  type: 'insert' | 'update' | 'delete' | 'upsert';
+  object: string;
+  fields: Map<string, string>;
+  conditions?: FlowCondition[];
+}
+
 export interface FlowElement {
   name: string;
   type: string;
@@ -16,6 +73,13 @@ export interface FlowElement {
   };
   nextElements: string[];
   rawData?: any;
+  flowName?: string;
+  inputParameters?: FlowParameter[];
+  outputParameters?: FlowParameter[];
+  decisions?: FlowDecision[];
+  assignments?: FlowAssignment[];
+  dmlOperations?: FlowDMLOperation[];
+  validationRules?: FlowValidationRule[];
 }
 
 export interface LoopInfo {
@@ -35,6 +99,10 @@ export interface SubflowInfo {
   flowName: string;
   isInLoop: boolean;
   loopContext?: string;
+  assignments?: FlowAssignment[];
+  decisions?: FlowDecision[];
+  dmlOperations?: FlowDMLOperation[];
+  validationRules?: FlowValidationRule[];
 }
 
 export interface FlowAnalysisResult {
@@ -48,7 +116,8 @@ export interface FlowAnalysisResult {
 }
 
 export class SimplifiedFlowAnalyzer {
-  private elements = new Map<string, FlowElement>();
+  /** Public: BulkifiedApexGenerator resolves decision branch targets through this. */
+  elements = new Map<string, FlowElement>();
   private loops = new Map<string, LoopInfo>();
   private subflows: SubflowInfo[] = [];
   private bulkificationIssues: string[] = [];
@@ -302,6 +371,13 @@ export class SimplifiedFlowAnalyzer {
     for (const [name, element] of this.elements) {
       if (element.operations.subflow) {
         const flowName = element.rawData?.flowname || 'Unknown';
+
+        // Parameters are attached to the element, not the SubflowInfo, because the
+        // generator resolves them by element name when emitting the validation method.
+        element.flowName = flowName;
+        element.inputParameters = this.parseParameters(element.rawData?.inputassignments);
+        element.outputParameters = this.parseParameters(element.rawData?.outputassignments);
+
         this.subflows.push({
           name,
           flowName,
@@ -364,6 +440,211 @@ export class SimplifiedFlowAnalyzer {
     }
     
     return nextElements;
+  }
+
+  // --- Flow-to-Apex conversion -------------------------------------------------
+  // These are public because BulkifiedApexGenerator composes them when emitting
+  // per-subflow validation methods. They translate parsed Flow constructs into
+  // Apex fragments; they do not know about the surrounding class.
+
+  /** Render a Flow decision's conditions as an Apex boolean expression. */
+  convertDecisionToApex(decision: FlowDecision): string {
+    const conditions = decision.conditions.map((cond) => {
+      const leftValue = this.convertValueReference(cond.leftValue);
+      const rightValue = this.convertValueReference(cond.rightValue);
+      return `${leftValue} ${this.convertOperator(cond.operator)} ${rightValue}`;
+    });
+    return conditions.join(` ${decision.logicType.toLowerCase()} `);
+  }
+
+  /** A dotted Flow reference (Loop_over_Loans.Field__c) becomes a record field read. */
+  private convertValueReference(value: string): string {
+    if (value.includes('.')) {
+      const [, field] = value.split('.');
+      return `record.get('${field}')`;
+    }
+    return value;
+  }
+
+  private convertOperator(operator: string): string {
+    const operatorMap: Record<string, string> = {
+      EqualTo: '==',
+      NotEqualTo: '!=',
+      GreaterThan: '>',
+      LessThan: '<',
+      GreaterThanOrEqualTo: '>=',
+      LessThanOrEqualTo: '<=',
+      Contains: 'contains',
+      IsNull: '== null',
+      IsNotNull: '!= null',
+    };
+    return operatorMap[operator] || '==';
+  }
+
+  convertAssignmentToApex(assignment: FlowAssignment): string {
+    const value = this.convertValueReference(assignment.value);
+    const variable = assignment.variable;
+
+    if (assignment.isCollection) {
+      switch (assignment.operator) {
+        case 'Add': return `${variable}.add(${value});`;
+        case 'RemoveFirst': return `if (!${variable}.isEmpty()) { ${variable}.remove(0); }`;
+        case 'RemoveAll': return `${variable}.clear();`;
+        default: return `${variable} = ${value};`;
+      }
+    }
+
+    switch (assignment.operator) {
+      case 'Assign': return `${variable} = ${value};`;
+      case 'Add': return `${variable} += ${value};`;
+      case 'Subtract': return `${variable} -= ${value};`;
+      case 'Multiply': return `${variable} *= ${value};`;
+      case 'Divide': return `${variable} /= ${value};`;
+      default: return `${variable} = ${value};`;
+    }
+  }
+
+  /**
+   * DML inside a Flow loop becomes a collection add, never a DML statement — that is
+   * the whole point of the conversion, so the caller can issue one DML after the loop.
+   */
+  convertDMLToApex(dml: FlowDMLOperation): string {
+    let code = '';
+
+    if (dml.conditions && dml.conditions.length > 0) {
+      const conditions = dml.conditions
+        .map((cond) => {
+          const leftValue = this.convertValueReference(cond.leftValue);
+          const rightValue = this.convertValueReference(cond.rightValue);
+          return `${leftValue} ${this.convertOperator(cond.operator)} ${rightValue}`;
+        })
+        .join(' && ');
+      code += `if (${conditions}) {\n`;
+    }
+
+    switch (dml.type) {
+      case 'insert': code += `recordsToInsert.add(record);`; break;
+      case 'update': code += `recordsToUpdate.add(record);`; break;
+      case 'delete': code += `recordsToDelete.add(record);`; break;
+      case 'upsert': code += `recordsToUpdate.add(record);`; break;
+    }
+
+    if (dml.conditions && dml.conditions.length > 0) {
+      code += '\n}';
+    }
+    return code;
+  }
+
+  /** Emit the block that surfaces a subflow's validation output onto the record. */
+  processSubflowOutputs(element: FlowElement): string {
+    if (!element.outputParameters) return '';
+
+    const validationMsgOutputs = element.outputParameters.filter(
+      (p) =>
+        p.name.toLowerCase().includes('validationmessage') ||
+        p.name.toLowerCase().includes('errormessage')
+    );
+    if (validationMsgOutputs.length === 0) return '';
+
+    let code = `
+        // Process validation messages
+        if (!result.isValid) {
+          ValidationResult subflowResult = new ValidationResult();
+          subflowResult.isValid = false;
+      `;
+
+    for (const output of validationMsgOutputs) {
+      if (!output.fieldMapping) continue;
+      switch (output.fieldMapping.sourceField.toLowerCase()) {
+        case 'message': code += `subflowResult.message = result.message;\n`; break;
+        case 'solution': code += `subflowResult.solution = result.solution;\n`; break;
+        case 'fieldname': code += `subflowResult.fieldName = result.fieldName;\n`; break;
+        case 'recordid': code += `subflowResult.recordId = result.recordId;\n`; break;
+        case 'recordname': code += `subflowResult.recordName = result.recordName;\n`; break;
+      }
+    }
+
+    code += `
+          handleValidationError(record, subflowResult);
+          return result;
+        }
+      `;
+    return code;
+  }
+
+  // --- Parameter parsing -------------------------------------------------------
+
+  private parseParameters(assignments: any): FlowParameter[] {
+    if (!assignments) return [];
+    const params = Array.isArray(assignments) ? assignments : [assignments];
+    return params.map((param: any) => ({
+      name: param.name || param.n,
+      dataType: this.inferDataType(param),
+      value: this.extractValue(param.value),
+      elementReference: param.value?.elementreference,
+      fieldMapping: this.extractFieldMapping(param),
+    }));
+  }
+
+  /** Loop_over_Loans.LLC_BI__Amount__c -> { sourceField: LLC_BI__Amount__c, ... } */
+  private extractFieldMapping(param: any): FlowFieldMapping | undefined {
+    const reference: string | undefined = param.value?.elementreference;
+    if (!reference) return undefined;
+
+    const parts = reference.split('.');
+    if (parts.length !== 2) return undefined;
+
+    return {
+      sourceField: parts[1],
+      targetField: param.name || param.n,
+      dataType: this.inferFieldType(parts[1]),
+      isCollection: false,
+      objectType: this.inferObjectType(parts[0]),
+    };
+  }
+
+  /**
+   * Field type inferred from naming convention, because the Flow XML does not carry
+   * the target field's type. A wrong guess produces an Apex cast that will not
+   * compile, which is the intended failure mode: loud, at compile time, not silent.
+   */
+  private inferFieldType(fieldName: string): string {
+    if (fieldName === 'Id') return 'Id';
+    if (fieldName === 'Name') return 'String';
+    if (fieldName.endsWith('Id')) return 'Id';
+    if (fieldName.includes('Amount')) return 'Decimal';
+    if (fieldName.includes('Date')) return 'Date';
+    if (fieldName.includes('Is_') || fieldName.includes('Is')) return 'Boolean';
+    return 'String';
+  }
+
+  private inferObjectType(variableName: string): string {
+    if (variableName.includes('Loan')) return 'LLC_BI__Loan__c';
+    if (variableName.includes('Account')) return 'Account';
+    if (variableName.includes('Contact')) return 'Contact';
+    if (variableName.includes('Opportunity')) return 'Opportunity';
+    return 'SObject';
+  }
+
+  private inferDataType(param: any): string {
+    if (!param.value) return 'Object';
+    if (param.value.elementreference) return 'Object';
+    if (param.value.stringvalue !== undefined) return 'String';
+    if (param.value.numbervalue !== undefined) return 'Decimal';
+    if (param.value.booleanvalue !== undefined) return 'Boolean';
+    if (param.value.datevalue !== undefined) return 'Date';
+    if (param.value.datetimevalue !== undefined) return 'Datetime';
+    return 'Object';
+  }
+
+  private extractValue(valueContainer: any): string | undefined {
+    if (!valueContainer) return undefined;
+    if (valueContainer.stringvalue !== undefined) return valueContainer.stringvalue;
+    if (valueContainer.numbervalue !== undefined) return String(valueContainer.numbervalue);
+    if (valueContainer.booleanvalue !== undefined) return String(valueContainer.booleanvalue);
+    if (valueContainer.datevalue !== undefined) return valueContainer.datevalue;
+    if (valueContainer.datetimevalue !== undefined) return valueContainer.datetimevalue;
+    return undefined;
   }
 
   private logAnalysisResults(result: FlowAnalysisResult): void {
