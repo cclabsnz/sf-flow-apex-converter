@@ -62,6 +62,20 @@ export interface DecisionBody {
   defaultLabel?: string;
 }
 
+/** One write performed by an assignment element. */
+export interface FlowAssignmentItem {
+  /** Variable or field the value is written to. */
+  target: string;
+  /** Flow operator verbatim — 'Assign', 'Add', 'AddItem', 'RemoveAfterFirst', … */
+  operator: string;
+  value: FlowValue;
+}
+
+export interface AssignmentBody {
+  kind: 'assignment';
+  items: FlowAssignmentItem[];
+}
+
 /** variables, constants, formulas, textTemplates — anything declared, not executed. */
 export interface FlowDeclaration {
   name: string;
