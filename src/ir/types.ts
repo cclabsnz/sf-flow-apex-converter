@@ -44,6 +44,24 @@ export interface RecordBody {
   storeOutputAutomatically: boolean;
 }
 
+/** One branch of a decision. */
+export interface FlowRule {
+  name: string;
+  label?: string;
+  /** 'and' | 'or' | a custom expression such as '1 AND (2 OR 3)'. */
+  conditionLogic: string;
+  conditions: FlowConditionIR[];
+  /** Element this branch connects to when its conditions hold. */
+  target?: string;
+}
+
+export interface DecisionBody {
+  kind: 'decision';
+  rules: FlowRule[];
+  defaultTarget?: string;
+  defaultLabel?: string;
+}
+
 /** variables, constants, formulas, textTemplates — anything declared, not executed. */
 export interface FlowDeclaration {
   name: string;
