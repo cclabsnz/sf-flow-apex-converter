@@ -217,9 +217,32 @@ are what makes every later step verifiable.
 - **Flow and Apex null semantics differ**, as do date arithmetic and division-by-zero
   behaviour. These are correctness traps that only differential testing will surface.
 
-## Open questions
+## Decisions
 
-- Which API version does generated Apex target — the org's, or a pinned floor?
-- Record-triggered Flows convert to a trigger + handler; does the tool emit the trigger
-  too, or only the handler class?
-- Subflows: inline them, or emit one class per subflow and call across?
+Three questions were open when this spec was written. Each is now decided, with the cost
+of being wrong stated so a reversal is cheap to reason about.
+
+**Generated Apex pins an API floor of 58.0.** Not the org's version. The emitter emits
+`WITH USER_MODE` and `Database.*(records, AccessLevel.USER_MODE)` unconditionally, and both
+arrived in 58.0 (Spring '23). Emitting a `-meta.xml` version the generated code cannot
+compile at is a worse failure than declaring a floor, because it surfaces as a deploy error
+the developer has to diagnose rather than a stated requirement.
+*Cost if wrong:* orgs below 58.0 cannot deploy the output. Those orgs predate user-mode DML
+entirely and have a larger problem than this tool.
+
+**Record-triggered Flows emit the handler class only — never a trigger file.** The tool
+cannot know whether the org already has a trigger on that object, and it usually will. A
+second trigger on the same object is an anti-pattern with undefined execution order relative
+to the first, so emitting one risks silently reordering an org's automation. The conversion
+output instead includes the exact one-line delegation to add to the existing trigger.
+*Cost if wrong:* the developer performs one manual wiring step. The alternative risks a
+duplicate trigger firing in undefined order, which is far more expensive to diagnose.
+
+**Subflows become one class each, with a collection-taking entry method.** A subflow exists
+because its logic is shared; inlining it into every caller discards that and duplicates the
+logic at each site. The generated method takes `List<SObject>`, not a single record —
+otherwise a subflow called per-iteration reintroduces the per-row pattern the conversion
+exists to remove. A subflow referenced exactly once is inlined, since there is no reuse to
+preserve.
+*Cost if wrong:* a rarely-shared subflow gets a class it did not need, which is noise rather
+than harm.
