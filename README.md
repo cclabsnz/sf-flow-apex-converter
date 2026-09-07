@@ -1,6 +1,14 @@
 # Salesforce Flow to Apex Bulkification Tool
 
-A powerful CLI tool that analyzes Salesforce Flows for governor limit issues and automatically converts them into bulkified Apex classes. This tool helps prevent hitting Salesforce governor limits by identifying and fixing common anti-patterns like SOQL queries and DML operations inside loops.
+A CLI tool that finds governor-limit anti-patterns in Salesforce Flows — SOQL and DML
+inside loops, subflows called per-iteration — and generates a bulk-safe Apex skeleton to
+migrate them into.
+
+**What it does not do:** translate your business logic. `analyze` is a complete answer;
+`bulkify` gives you a class with the queries and DML already lifted out of the loop, the
+subflow parameters mapped to record fields, and the loop body marked TODO. The logic that
+loop actually performed is still yours to write. The generated code is a correct starting
+structure, not a finished conversion.
 
 ## 🎯 Problem This Solves
 
@@ -9,17 +17,20 @@ Salesforce Flows can easily hit governor limits when:
 - DML operations are performed inside loops (150 DML limit)
 - Subflows are called inside loops (multiplying the above issues)
 
-This tool automatically:
-1. **Analyzes** your Flow to find these issues
-2. **Generates** bulkified Apex code that moves operations outside loops
-3. **Creates** test classes for the generated code
-4. **Provides** clear recommendations for optimization
+This tool:
+1. **Analyzes** your Flow to find these issues — complete and accurate
+2. **Generates** a bulk-safe Apex skeleton with queries and DML lifted out of the loop
+3. **Maps** subflow parameters to record fields, and stubs a validation method per subflow
+4. **Marks** the loop body TODO — your business logic is not migrated for you
 
 ## 📦 Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/sf-flow-apex-converter.git
+# Install from npm (recommended)
+npm install -g @cclabsnz/sf-flow-apex-converter
+
+# Or build from source
+git clone https://github.com/cclabsnz/sf-flow-apex-converter.git
 cd sf-flow-apex-converter
 
 # Install dependencies
@@ -258,7 +269,7 @@ MIT License - see [LICENSE](LICENSE) file for details
 ## 🆘 Support
 
 For issues, questions, or contributions:
-- Open an issue on [GitHub](https://github.com/your-username/sf-flow-apex-converter/issues)
+- Open an issue on [GitHub](https://github.com/cclabsnz/sf-flow-apex-converter/issues)
 - Check existing issues for solutions
 - Contribute improvements via pull requests
 
