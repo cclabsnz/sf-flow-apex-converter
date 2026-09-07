@@ -41,8 +41,16 @@ export class Scope {
   }
 
   private static sanitise(name: string): string {
-    const cleaned = name.replace(/[^A-Za-z0-9_]/g, '_').replace(/_+$/, '');
+    const cleaned = name
+      .replace(/[^A-Za-z0-9_]/g, '_')
+      .replace(/_+/g, '_')  // Collapse underscore runs
+      .replace(/_+$/, '');  // Strip trailing underscores
     if (cleaned === '' || /^_+$/.test(cleaned)) return 'v';
-    return /^[0-9]/.test(cleaned) ? `v${cleaned}` : cleaned;
+    // Prefix if starts with digit or underscore, removing any leading underscores
+    if (/^[0-9_]/.test(cleaned)) {
+      const noLeading = cleaned.replace(/^_+/, '');
+      return `v${noLeading}`;
+    }
+    return cleaned;
   }
 }

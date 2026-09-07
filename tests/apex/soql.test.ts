@@ -17,6 +17,12 @@ describe('soql', () => {
     expect(soql({ object: 'Account', fields: ['Id', 'Name'] }).fields).toEqual(['Id', 'Name']);
   });
 
+  it('deduplicates Id case-insensitively', () => {
+    const fields = soql({ object: 'Account', fields: ['id', 'Name'] }).fields;
+    const idCount = fields.filter(f => f.toLowerCase() === 'id').length;
+    expect(idCount).toBe(1);
+  });
+
   it('rejects a field name that is not an identifier', () => {
     expect(() => soql({ object: 'Account', fields: ["Name FROM User WHERE Id != null OR '1'='1"] }))
       .toThrow(ApexTypeError);

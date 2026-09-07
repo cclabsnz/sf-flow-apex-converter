@@ -44,4 +44,22 @@ describe('Scope', () => {
     parent.child().allocate('temp');
     expect(parent.has('temp')).toBe(false);
   });
+
+  it('removes leading punctuation and collapse underscore runs', () => {
+    // Flow element labels commonly carry parenthetical or leading-punctuation
+    // prefixes. The identifier must start with a letter, and double underscores
+    // should not appear.
+    const result = new Scope().allocate('(Sync) Update');
+    expect(/^[A-Za-z]/.test(result)).toBe(true);
+    expect(result).not.toContain('__');
+  });
+
+  it('prefixes a name that starts with an underscore', () => {
+    const result = new Scope().allocate('_leading');
+    expect(/^[A-Za-z]/.test(result)).toBe(true);
+  });
+
+  it('falls back when a name is only underscores', () => {
+    expect(new Scope().allocate('__')).toBe('v');
+  });
 });
