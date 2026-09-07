@@ -1,4 +1,41 @@
 /**
+ * Words the Apex compiler rejects as a local variable name.
+ *
+ * Verified empirically rather than copied from a doc page: each word below was
+ * compiled as `Integer <word> = 1;` against a Developer Edition org (API 67) and
+ * rejected. Words that a keyword list would suggest but the compiler actually
+ * accepts — id, order, count, type, transient, with, sharing, without, native,
+ * throws, assert, to, future, search, savepoint, runas — are deliberately absent,
+ * because guarding them would rename identifiers for no reason.
+ *
+ * Stored lowercase and matched case-insensitively: Apex is a case-insensitive
+ * language, and `Integer List = 1;` fails exactly as `Integer list = 1;` does.
+ */
+const RESERVED: ReadonlySet<string> = new Set([
+  // Declaration and modifier keywords
+  'abstract', 'class', 'const', 'enum', 'extends', 'final', 'global', 'implements',
+  'interface', 'override', 'package', 'private', 'protected', 'public', 'static',
+  'synchronized', 'testmethod', 'virtual', 'webservice',
+  // Control flow
+  'break', 'case', 'catch', 'continue', 'default', 'do', 'else', 'exit', 'finally',
+  'for', 'goto', 'if', 'loop', 'return', 'switch', 'then', 'throw', 'try', 'when',
+  'while',
+  // Values and operators
+  'as', 'cast', 'instanceof', 'new', 'null', 'super', 'this', 'true', 'false',
+  // Types
+  'any', 'array', 'blob', 'boolean', 'byte', 'char', 'currency', 'date', 'datetime',
+  'decimal', 'double', 'float', 'int', 'integer', 'list', 'long', 'map', 'number',
+  'object', 'set', 'short', 'string', 'time', 'void',
+  // DML and SOQL
+  'and', 'asc', 'begin', 'by', 'commit', 'delete', 'desc', 'export', 'from', 'group',
+  'having', 'import', 'in', 'inner', 'insert', 'into', 'join', 'like', 'limit',
+  'merge', 'not', 'of', 'on', 'or', 'outer', 'rollback', 'select', 'sort', 'undelete',
+  'update', 'upsert', 'using', 'where',
+  // Platform
+  'exception', 'system', 'trigger',
+]);
+
+/**
  * Allocates Apex identifiers, guaranteeing each is valid and unique.
  *
  * Both of this project's identifier defects came from string concatenation with
@@ -51,6 +88,9 @@ export class Scope {
       const noLeading = cleaned.replace(/^_+/, '');
       return `v${noLeading}`;
     }
+    // Same prefix rule for a name that collides with a keyword. Prefixing can never
+    // produce another reserved word, so one pass is enough.
+    if (RESERVED.has(cleaned.toLowerCase())) return `v${cleaned}`;
     return cleaned;
   }
 }

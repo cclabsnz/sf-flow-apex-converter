@@ -62,4 +62,43 @@ describe('Scope', () => {
   it('falls back when a name is only underscores', () => {
     expect(new Scope().allocate('__')).toBe('v');
   });
+
+  it('never returns an Apex reserved word', () => {
+    // A Flow element genuinely named "Update" or "Case" sanitises to a keyword,
+    // and `Integer update = ...` does not compile. Verified against the compiler:
+    // every word in RESERVED was rejected as a local variable name.
+    for (const word of ['public', 'class', 'update', 'delete', 'case', 'list', 'limit']) {
+      expect(new Scope().allocate(word)).not.toBe(word);
+    }
+  });
+
+  it('guards reserved words case-insensitively, because Apex is', () => {
+    // `Integer PUBLIC = 1;` and `Integer List = 1;` are both rejected.
+    expect(new Scope().allocate('PUBLIC')).not.toBe('PUBLIC');
+    expect(new Scope().allocate('List')).not.toBe('List');
+    expect(new Scope().allocate('Return')).not.toBe('Return');
+  });
+
+  it('produces a compilable identifier when guarding a reserved word', () => {
+    expect(new Scope().allocate('update')).toBe('vupdate');
+  });
+
+  it('leaves words the compiler actually accepts alone', () => {
+    // Checked against the compiler rather than assumed: these are NOT reserved,
+    // and guarding them would rename identifiers for no reason.
+    for (const word of ['id', 'order', 'count', 'type', 'transient', 'sharing']) {
+      expect(new Scope().allocate(word)).toBe(word);
+    }
+  });
+
+  it('only guards whole-word collisions, not names containing a keyword', () => {
+    expect(new Scope().allocate('updateContact')).toBe('updateContact');
+    expect(new Scope().allocate('Case Number')).toBe('Case_Number');
+  });
+
+  it('keeps a guarded name unique against the name it guards to', () => {
+    const s = new Scope();
+    expect(s.allocate('vupdate')).toBe('vupdate');
+    expect(s.allocate('update')).toBe('vupdate2');
+  });
 });
