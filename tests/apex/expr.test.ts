@@ -30,10 +30,9 @@ describe('comparison', () => {
     ).toThrow(ApexTypeError);
   });
 
-  it('refuses to order a String', () => {
-    expect(() =>
-      comparison(literal(STRING, "'a'"), '<', literal(STRING, "'b'"))
-    ).toThrow(ApexTypeError);
+  it('orders a String, which Apex compares lexicographically', () => {
+    const e = comparison(literal(STRING, "'a'"), '<', literal(STRING, "'b'"));
+    expect(e.type).toEqual(BOOLEAN);
   });
 
   it('refuses a Boolean operand', () => {

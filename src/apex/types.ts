@@ -43,15 +43,20 @@ export function renderType(type: ApexType): string {
 /**
  * Types Apex will accept either side of `<`, `>`, `<=`, `>=`.
  *
- * String is deliberately excluded: Apex's ordering operators cover numeric and
- * date types, and string ordering goes through `compareTo()`. Confidence note —
- * this was checked against secondary sources rather than the official operator
- * reference, which returned 403; if `'a' < 'b'` does compile, add 'String' here
- * and the rest of the module is unaffected. The error message already points a
- * caller at compareTo, so the failure mode is a clear refusal, not wrong output.
+ * Settled against the compiler, not a doc page. Each candidate was compiled as
+ * `x < y` in a Developer Edition org (API 67): Decimal, Integer, Date, Datetime,
+ * String and Id compile; Boolean, Object and SObject are rejected outright.
+ *
+ * String was excluded here on an earlier unverified assumption that ordering went
+ * through `compareTo()`. It does not — `'apple' < 'banana'` compiles and is true.
+ * Worth knowing when reading generated output: the comparison is case-insensitive
+ * (`'Z' < 'a'` is false), which is NOT what String.compareTo does.
+ *
+ * Object stays out on purpose. It is what record.get() returns, and refusing it
+ * is the whole defence against `record.get('Amount') > 1000` — see isUntyped.
  */
 export function isComparable(type: ApexType): boolean {
-  return ['Decimal', 'Integer', 'Date', 'Datetime'].includes(type.kind);
+  return ['Decimal', 'Integer', 'Date', 'Datetime', 'String', 'Id'].includes(type.kind);
 }
 
 /**
