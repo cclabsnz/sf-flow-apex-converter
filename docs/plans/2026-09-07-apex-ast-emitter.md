@@ -185,7 +185,16 @@ export function renderType(type: ApexType): string {
   }
 }
 
-/** Types Apex will accept either side of `<`, `>`, `<=`, `>=`. */
+/**
+ * Types Apex will accept either side of `<`, `>`, `<=`, `>=`.
+ *
+ * String is deliberately excluded: Apex's ordering operators cover numeric and
+ * date types, and string ordering goes through `compareTo()`. Confidence note —
+ * this was checked against secondary sources rather than the official operator
+ * reference, which returned 403; if `'a' < 'b'` does compile, add 'String' here
+ * and the rest of the module is unaffected. The error message already points a
+ * caller at compareTo, so the failure mode is a clear refusal, not wrong output.
+ */
 export function isComparable(type: ApexType): boolean {
   return ['Decimal', 'Integer', 'Date', 'Datetime'].includes(type.kind);
 }
