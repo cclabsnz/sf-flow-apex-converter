@@ -16,6 +16,15 @@ export interface FlowValue {
   raw?: string;
 }
 
+/** One Flow condition, as written — no Apex typing decision is made here. */
+export interface FlowConditionIR {
+  /** Left-hand reference, e.g. 'Loop_over_Loans.LLC_BI__Amount__c'. */
+  left: string;
+  /** Flow operator verbatim, e.g. 'EqualTo', 'IsNull', 'GreaterThan'. */
+  operator: string;
+  right: FlowValue;
+}
+
 /** variables, constants, formulas, textTemplates — anything declared, not executed. */
 export interface FlowDeclaration {
   name: string;
