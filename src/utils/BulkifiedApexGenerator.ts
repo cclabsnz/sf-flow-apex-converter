@@ -156,17 +156,17 @@ public with sharing class ${className} {
     private void executeDMLInBulk() {
         // Insert records
         if (!recordsToInsert.isEmpty()) {
-            insert recordsToInsert;
+            Database.insert(recordsToInsert, AccessLevel.USER_MODE);
         }
         
         // Update records
         if (!recordsToUpdate.isEmpty()) {
-            update recordsToUpdate;
+            Database.update(recordsToUpdate, AccessLevel.USER_MODE);
         }
         
         // Delete records
         if (!recordsToDelete.isEmpty()) {
-            delete recordsToDelete;
+            Database.delete(recordsToDelete, AccessLevel.USER_MODE);
         }
     }
     
@@ -179,25 +179,48 @@ public with sharing class ${className} {
   
   private generateBulkQueries(flow: FlowAnalysisResult): string {
     const queries: string[] = [];
-    
-    // Check for record lookup elements
+
     for (const [name, element] of flow.elements) {
-      if (element.operations.soql) {
+      if (!element.operations.soql) continue;
+
+      // The Flow declares the object it looks up. 2.0.x ignored that and emitted
+      // `FROM Account` for every query, which compiles and then queries the wrong
+      // table — the worst kind of wrong, because nothing complains.
+      const objectName: string | undefined = element.rawData?.object;
+      if (!objectName) {
         queries.push(`
+        // Query for ${name}: the Flow does not declare a target object, so no query
+        // can be generated. Add it by hand.`);
+        continue;
+      }
+
+      const declared: string[] = this.queriedFields(element.rawData);
+      const fields = ['Id', ...declared.filter((f) => f !== 'Id')].join(', ');
+      const varName = `${this.sanitizeVariableName(name)}Records`;
+
+      queries.push(`
         // Query for ${name}
         if (!recordIds.isEmpty()) {
-            List<SObject> relatedRecords = [
-                SELECT Id, Name 
-                FROM Account 
+            List<SObject> ${varName} = [
+                SELECT ${fields}
+                FROM ${objectName}
                 WHERE Id IN :recordIds
+                WITH USER_MODE
             ];
-            queriedRecords.put('${name}', relatedRecords);
+            queriedRecords.put('${name}', ${varName});
         }`);
-      }
     }
-    
+
     return queries.length > 0 ? queries.join('\n') : '// No queries needed';
   }
+
+  /** Fields the Flow's lookup declares. xml2js gives a string or an array. */
+  private queriedFields(rawData: any): string[] {
+    const raw = rawData?.queriedfields ?? rawData?.queriedFields;
+    if (!raw) return [];
+    return (Array.isArray(raw) ? raw : [raw]).map((f: any) => String(f)).filter(Boolean);
+  }
+
   
   private generateValidationLogic(flow: FlowAnalysisResult): string {
     const validations: string[] = [];
@@ -230,7 +253,9 @@ public with sharing class ${className} {
       const element = flow.elements.get(subflow.name);
       if (!element || !subflow.isInLoop) continue;
 
-      const methodName = `validate${this.sanitizeClassName(subflow.flowName)}_Bulkified`;
+      // sanitizeClassName already appends _Bulkified; appending it again produced
+      // validateX_Bulkified_Bulkified in 2.0.3.
+      const methodName = `validate${this.sanitizeClassName(subflow.flowName)}`;
       const params = element.inputParameters || [];
 
       validations.push(`
@@ -278,7 +303,7 @@ public with sharing class ${className} {
         validations.push(`
         // Validation from subflow: ${subflow.flowName}
         ValidationResult ${this.sanitizeVariableName(subflow.flowName)}Result = 
-            validate${this.sanitizeClassName(subflow.flowName)}_Bulkified(record);
+            validate${this.sanitizeClassName(subflow.flowName)}(record);
         
         if (!${this.sanitizeVariableName(subflow.flowName)}Result.isValid) {
             handleValidationError(record, ${this.sanitizeVariableName(subflow.flowName)}Result);
