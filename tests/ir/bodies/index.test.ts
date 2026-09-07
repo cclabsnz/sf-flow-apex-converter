@@ -12,20 +12,20 @@ describe('parseBody', () => {
     expect(parseBody('loops', { collectionreference: 'C' })?.kind).toBe('loop');
     expect(parseBody('subflows', { flowname: 'F' })?.kind).toBe('subflow');
     expect(parseBody('actioncalls', { actionname: 'A' })?.kind).toBe('action');
+    expect(parseBody('collectionprocessors', { collectionreference: 'C' })?.kind).toBe('collectionProcessor');
   });
 
   it('returns undefined for a kind with no body parser', () => {
-    // collectionprocessors is modelled as a node but has no typed body yet.
-    expect(parseBody('collectionprocessors', {})).toBeUndefined();
+    expect(parseBody('screens', {})).toBeUndefined();
   });
 });
 
 describe('bodies attached to the example Flow', () => {
   it('types every node whose kind has a parser', async () => {
     const ir = await parseFlowFile(EXAMPLE_FLOW);
-    // 20 modelled elements; only collectionprocessors (1) has no body parser.
+    // 20 modelled elements, every one of them now has a typed body parser.
     const typed = ir.nodes.filter((n) => n.body !== undefined);
-    expect(typed).toHaveLength(19);
+    expect(typed).toHaveLength(20);
   });
 
   it('reads the real lookup object through the typed body', async () => {
