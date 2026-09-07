@@ -1,5 +1,5 @@
 import {
-  BOOLEAN, DATE, DECIMAL, ID, INTEGER, OBJECT, STRING,
+  BOOLEAN, DATE, DATETIME, DECIMAL, ID, INTEGER, OBJECT, STRING,
   isComparable, isUntyped, listOf, renderType, sobjectType,
 } from '../../src/apex/types.js';
 
@@ -24,9 +24,19 @@ describe('renderType', () => {
 
 describe('isComparable', () => {
   it('accepts the types Apex can order', () => {
-    for (const t of [DECIMAL, INTEGER, DATE]) {
+    for (const t of [DECIMAL, INTEGER, DATE, DATETIME]) {
       expect(isComparable(t)).toBe(true);
     }
+  });
+
+  it('accepts String, which Apex orders lexicographically', () => {
+    // Verified against the compiler: `'apple' < 'banana'` compiles and is true.
+    // This module previously refused it on an unverified assumption.
+    expect(isComparable(STRING)).toBe(true);
+  });
+
+  it('accepts Id, which Apex also orders', () => {
+    expect(isComparable(ID)).toBe(true);
   });
 
   it('rejects Object, which is what record.get() returns', () => {
