@@ -67,6 +67,46 @@ describe('parseElements', () => {
     expect(unsupported).toHaveLength(0);
   });
 
+  it('records a choice as unsupported instead of dropping it', () => {
+    const { nodes, unsupported } = parseElements({
+      choices: { name: 'Yes_No_Choice', label: 'Yes or No' },
+    });
+    expect(nodes).toHaveLength(0);
+    expect(unsupported).toHaveLength(1);
+    expect(unsupported[0].kind).toBe('choices');
+    expect(unsupported[0].name).toBe('Yes_No_Choice');
+  });
+
+  it('records a dynamicChoiceSet as unsupported instead of dropping it', () => {
+    const { nodes, unsupported } = parseElements({
+      dynamicchoicesets: { name: 'Account_Choices', object: 'Account' },
+    });
+    expect(nodes).toHaveLength(0);
+    expect(unsupported).toHaveLength(1);
+    expect(unsupported[0].kind).toBe('dynamicchoicesets');
+    expect(unsupported[0].name).toBe('Account_Choices');
+  });
+
+  it('records a nameless unmodelled element as unsupported instead of skipping it', () => {
+    // A malformed <screens> with no <name> must still surface — silently skipping it
+    // here would be exactly the "vanishes entirely" bug this IR exists to prevent.
+    const { nodes, unsupported } = parseElements({
+      screens: { label: 'No name given' },
+    });
+    expect(nodes).toHaveLength(0);
+    expect(unsupported).toHaveLength(1);
+    expect(unsupported[0].kind).toBe('screens');
+    expect(unsupported[0].name).toBeUndefined();
+  });
+
+  it('still skips a nameless entry for a modelled type, since it is not element-shaped', () => {
+    const { nodes, unsupported } = parseElements({
+      assignments: { label: 'No name given' },
+    });
+    expect(nodes).toHaveLength(0);
+    expect(unsupported).toHaveLength(0);
+  });
+
   it('models the element types the analyzer already handled', () => {
     // Guards against a regression in coverage while the IR is being built out.
     for (const kind of [

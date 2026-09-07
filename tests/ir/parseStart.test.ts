@@ -32,4 +32,32 @@ describe('parseStart', () => {
   it('returns undefined when the Flow has no start element', () => {
     expect(parseStart({})).toBeUndefined();
   });
+
+  it('does not fabricate a connector target when targetReference is missing', () => {
+    // A malformed connector with no target must not produce a fake graph edge —
+    // no connector at all is safer than a lie about where control goes.
+    const start = parseStart({
+      start: { connector: { locationX: '56' } },
+    })!;
+    expect(start.connector).toBeUndefined();
+  });
+
+  it('captures filters on the start element', () => {
+    const start = parseStart({
+      start: {
+        object: 'LLC_BI__Loan__c',
+        triggertype: 'RecordAfterSave',
+        filterlogic: 'and',
+        filters: { field: 'LLC_BI__Loan__c', operator: 'In', value: { elementreference: 'Get_Loan_IDs' } },
+      },
+    })!;
+    expect(start.filters).toEqual([
+      { field: 'LLC_BI__Loan__c', operator: 'In', value: { elementreference: 'Get_Loan_IDs' } },
+    ]);
+  });
+
+  it('leaves filters undefined when the start element has none', () => {
+    const start = parseStart({ start: { triggertype: 'RecordAfterSave' } })!;
+    expect(start.filters).toBeUndefined();
+  });
 });
