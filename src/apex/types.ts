@@ -66,3 +66,35 @@ export function isComparable(type: ApexType): boolean {
 export function isUntyped(type: ApexType): boolean {
   return type.kind === 'Object';
 }
+
+/**
+ * True when Apex will assign a value of `source` to a slot of `target`.
+ *
+ * The permitted widenings were confirmed against the compiler, not assumed:
+ * Integer -> Decimal, Id <-> String and Date -> Datetime all assign cleanly,
+ * while Decimal -> Integer and Integer -> String are rejected outright
+ * ("Illegal assignment from String to Decimal").
+ *
+ * Object is asymmetric on purpose. Everything assigns TO Object, but Object
+ * assigns to nothing without an explicit cast — which is the same defence
+ * isUntyped provides for comparisons, applied to assignment.
+ */
+export function isAssignable(target: ApexType, source: ApexType): boolean {
+  if (target.kind === 'Object') return true;
+  if (source.kind === 'Object') return false;
+  if (target.kind === 'List' && source.kind === 'List') {
+    return isAssignable(target.of, source.of);
+  }
+  if (target.kind === 'SObject' && source.kind === 'SObject') {
+    // The abstract SObject accepts any concrete one; a concrete one accepts only itself.
+    return target.name === undefined || target.name === source.name;
+  }
+  if (target.kind === source.kind) return true;
+  const widenings: ReadonlyArray<readonly [string, string]> = [
+    ['Integer', 'Decimal'],
+    ['Id', 'String'],
+    ['String', 'Id'],
+    ['Date', 'Datetime'],
+  ];
+  return widenings.some(([from, to]) => source.kind === from && target.kind === to);
+}

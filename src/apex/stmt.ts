@@ -1,6 +1,7 @@
 import { ApexExpr } from './expr.js';
 import { SoqlQuery } from './soql.js';
-import { ApexType } from './types.js';
+import { ApexTypeError } from './errors.js';
+import { ApexType, isAssignable, isUntyped, renderType } from './types.js';
 
 export type DmlOperation = 'insert' | 'update' | 'delete';
 
@@ -15,10 +16,22 @@ export type ApexStmt =
   | { stmt: 'dmlBulk'; operation: DmlOperation; collection: string };
 
 export function declare(type: ApexType, name: string, init: ApexExpr | null): ApexStmt {
+  if (init !== null && !isAssignable(type, init.type)) {
+    throw new ApexTypeError(
+      `Cannot assign ${renderType(init.type)} to ${renderType(type)} in the declaration ` +
+        `of '${name}'. Apex rejects this outright at compile time.`
+    );
+  }
   return { stmt: 'declare', type, name, init };
 }
 
 export function assign(name: string, value: ApexExpr): ApexStmt {
+  if (isUntyped(value.type)) {
+    throw new ApexTypeError(
+      `Cannot assign an untyped (Object) expression to '${name}'. ` +
+        `record.get() returns Object; resolve the type first.`
+    );
+  }
   return { stmt: 'assign', name, value };
 }
 
@@ -44,6 +57,13 @@ export function queryInto(type: ApexType, name: string, query: SoqlQuery): ApexS
 }
 
 export function ifThen(condition: ApexExpr, body: ApexStmt[]): ApexStmt {
+  // `if (5)` is not C. The compiler is explicit: "Condition expression must be
+  // of type Boolean: Integer".
+  if (condition.type.kind !== 'Boolean') {
+    throw new ApexTypeError(
+      `An if condition must be Boolean; got ${renderType(condition.type)}.`
+    );
+  }
   return { stmt: 'ifThen', condition, body };
 }
 
