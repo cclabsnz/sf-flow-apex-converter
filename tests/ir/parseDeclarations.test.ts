@@ -23,12 +23,17 @@ const flowData = {
     datatype: 'Boolean',
     expression: "ISPICKVAL({!Loop.Product_Type__c}, 'Contingent Liability')",
   },
+  texttemplates: {
+    name: 'EmailBody',
+    datatype: 'String',
+    expression: 'Hello {!Contact.FirstName}, your account is {!Loop.Status__c}.',
+  },
 };
 
 describe('parseDeclarations', () => {
   it('reads every declaration kind', () => {
     const kinds = parseDeclarations(flowData).map((d) => d.kind).sort();
-    expect(kinds).toEqual(['constant', 'formula', 'variable', 'variable']);
+    expect(kinds).toEqual(['constant', 'formula', 'textTemplate', 'variable', 'variable']);
   });
 
   it('parses a single (non-array) declaration, which xml2js does not wrap', () => {
@@ -55,5 +60,12 @@ describe('parseDeclarations', () => {
   it('defaults a declaration with no value to kind none', () => {
     const loans = parseDeclarations(flowData).find((d) => d.name === 'Loans')!;
     expect(loans.value).toEqual({ kind: 'none' });
+  });
+
+  it('parses a textTemplate declaration', () => {
+    const t = parseDeclarations(flowData).find((d) => d.kind === 'textTemplate')!;
+    expect(t.name).toBe('EmailBody');
+    expect(t.kind).toBe('textTemplate');
+    expect(t.expression).toBe('Hello {!Contact.FirstName}, your account is {!Loop.Status__c}.');
   });
 });
