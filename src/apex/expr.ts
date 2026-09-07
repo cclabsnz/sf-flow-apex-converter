@@ -96,12 +96,6 @@ export function methodCall(
   method: string,
   args: ApexExpr[],
   type: ApexType
-): { node: 'methodCall'; type: ApexType; target: ApexExpr; method: string; args: ApexExpr[] };
-export function methodCall(
-  target: ApexExpr,
-  method: string,
-  args: ApexExpr[],
-  type: ApexType
 ): ApexExpr {
   return { node: 'methodCall', type, target, method, args };
 }
