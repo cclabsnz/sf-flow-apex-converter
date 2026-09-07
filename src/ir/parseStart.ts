@@ -1,10 +1,5 @@
+import { parseCondition, toArray } from './parseValue.js';
 import { FlowStart } from './types.js';
-
-/** xml2js gives one object for a single occurrence and an array for many. */
-function toArray(value: unknown): Record<string, unknown>[] {
-  if (value === undefined || value === null) return [];
-  return (Array.isArray(value) ? value : [value]) as Record<string, unknown>[];
-}
 
 export function parseStart(flowData: Record<string, unknown>): FlowStart | undefined {
   const raw = flowData.start as Record<string, unknown> | undefined;
@@ -21,7 +16,9 @@ export function parseStart(flowData: Record<string, unknown>): FlowStart | undef
     triggerKind: raw.triggertype === undefined ? 'autolaunched' : String(raw.triggertype),
     object: raw.object === undefined ? undefined : String(raw.object),
     entryCriteria: raw.filterlogic === undefined ? undefined : String(raw.filterlogic),
-    filters: raw.filters === undefined ? undefined : toArray(raw.filters),
+    // Start filters have the same field/operator/value shape as record filters —
+    // parseCondition handles them verbatim.
+    filters: raw.filters === undefined ? undefined : toArray(raw.filters).map(parseCondition),
     connector:
       connectorRaw && connectorTarget !== undefined
         ? { target: String(connectorTarget), isFault: false }

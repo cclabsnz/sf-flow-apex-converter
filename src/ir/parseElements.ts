@@ -1,4 +1,5 @@
 import { parseBody } from './bodies/index.js';
+import { toArray } from './parseValue.js';
 import { FlowConnector, FlowNode, UnsupportedConstruct } from './types.js';
 
 /** Executable element types the IR models. */
@@ -40,11 +41,6 @@ const FLOW_METADATA_KEYS = new Set([
   'texttemplates', 'sourcetemplate', 'environments',
   'runinmode', 'timezonesidkey', 'triggerorder', '$', 'xmlns',
 ]);
-
-function toArray(value: unknown): Record<string, unknown>[] {
-  if (value === undefined || value === null) return [];
-  return (Array.isArray(value) ? value : [value]) as Record<string, unknown>[];
-}
 
 function connectorFrom(raw: unknown, isFault: boolean): FlowConnector[] {
   return toArray(raw)
@@ -97,7 +93,13 @@ export function parseElements(flowData: Record<string, unknown>): {
         continue;
       }
 
-      if (raw.name === undefined) continue; // a modelled type with no name is not element-shaped
+      // A modelled type with no name is not element-shaped: xml2js renders an empty
+      // self-closing tag like `<recordLookups/>` as `{}` under that key, with no
+      // sub-fields at all — this is not a real (malformed) element to report, so it is
+      // skipped rather than treated as unsupported. This differs from the unmodelled
+      // branch above, where a nameless entry DOES carry element content and so must
+      // still be surfaced.
+      if (raw.name === undefined) continue;
 
       nodes.push({
         name: String(raw.name),
