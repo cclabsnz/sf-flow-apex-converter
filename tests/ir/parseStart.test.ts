@@ -42,7 +42,7 @@ describe('parseStart', () => {
     expect(start.connector).toBeUndefined();
   });
 
-  it('captures filters on the start element', () => {
+  it('captures filters on the start element as typed conditions', () => {
     const start = parseStart({
       start: {
         object: 'LLC_BI__Loan__c',
@@ -52,7 +52,7 @@ describe('parseStart', () => {
       },
     })!;
     expect(start.filters).toEqual([
-      { field: 'LLC_BI__Loan__c', operator: 'In', value: { elementreference: 'Get_Loan_IDs' } },
+      { left: 'LLC_BI__Loan__c', operator: 'In', right: { kind: 'reference', raw: 'Get_Loan_IDs' } },
     ]);
   });
 
