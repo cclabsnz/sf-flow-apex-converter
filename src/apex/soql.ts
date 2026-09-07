@@ -43,7 +43,8 @@ export function soql(spec: SoqlSpec): SoqlQuery {
   if (spec.orderBy) requireIdentifier(spec.orderBy.field, 'ORDER BY field');
   if (spec.whereIdIn) requireIdentifier(spec.whereIdIn, 'bind variable');
 
-  const fields = spec.fields.includes('Id') ? [...spec.fields] : ['Id', ...spec.fields];
+  const hasId = spec.fields.some(f => f.toLowerCase() === 'id');
+  const fields = hasId ? [...spec.fields] : ['Id', ...spec.fields];
   return { ...spec, fields };
 }
 
