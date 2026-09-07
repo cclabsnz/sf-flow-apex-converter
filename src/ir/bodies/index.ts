@@ -1,5 +1,6 @@
 import { FlowBody } from '../types.js';
 import { parseAssignmentBody } from './assignmentBody.js';
+import { parseCollectionProcessorBody } from './collectionProcessorBody.js';
 import { parseDecisionBody } from './decisionBody.js';
 import { parseActionBody, parseLoopBody, parseSubflowBody } from './flowControlBody.js';
 import { parseRecordBody } from './recordBody.js';
@@ -29,6 +30,8 @@ export function parseBody(kind: string, raw: Record<string, unknown>): FlowBody 
       return parseSubflowBody(raw);
     case 'actioncalls':
       return parseActionBody(raw);
+    case 'collectionprocessors':
+      return parseCollectionProcessorBody(raw);
     default:
       return undefined;
   }
