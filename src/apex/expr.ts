@@ -47,8 +47,21 @@ function requireOperand(e: ApexExpr, what: string): void {
   }
 }
 
+const ORDERING_OPERATORS: readonly string[] = ['<', '>', '<=', '>='];
+
 /** `<`, `>`, `<=`, `>=` — only over types Apex can order. */
 export function comparison(left: ApexExpr, op: OrderingOperator, right: ApexExpr): ApexExpr {
+  // Checked at runtime as well as in the type, because the type alone stops only
+  // TypeScript callers. This used to be covered incidentally — `a contains 'x'`
+  // was refused because String was (wrongly) not orderable, so the operand check
+  // caught it. Making String orderable removed that accident, and the operator
+  // itself is what DEFECT 2 was about, so it is now checked directly.
+  if (!ORDERING_OPERATORS.includes(op)) {
+    throw new ApexTypeError(
+      `'${op}' is not an Apex ordering operator. Use one of ${ORDERING_OPERATORS.join(', ')}, ` +
+        `or a method call such as contains().`
+    );
+  }
   requireOperand(left, `the left operand of '${op}'`);
   requireOperand(right, `the right operand of '${op}'`);
   for (const side of [left, right]) {
