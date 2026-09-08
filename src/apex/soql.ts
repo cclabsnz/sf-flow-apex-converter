@@ -5,6 +5,8 @@ export interface SoqlSpec {
   fields: string[];
   /** Name of an Apex variable holding the Ids to bind. Never a literal list. */
   whereIdIn?: string;
+  /** A field-qualified IN bind. `whereIdIn` is the Id shorthand for this. */
+  whereIn?: { field: string; bind: string };
   orderBy?: { field: string; direction?: 'ASC' | 'DESC' };
   limit?: number;
 }
@@ -41,15 +43,22 @@ export function soql(spec: SoqlSpec): SoqlQuery {
   for (const f of spec.fields) requireIdentifier(f, 'SOQL field');
   if (spec.orderBy) requireIdentifier(spec.orderBy.field, 'ORDER BY field');
   if (spec.whereIdIn) requireIdentifier(spec.whereIdIn, 'bind variable');
+  if (spec.whereIn) {
+    requireIdentifier(spec.whereIn.field, 'IN field');
+    requireIdentifier(spec.whereIn.bind, 'bind variable');
+  }
 
   const hasId = spec.fields.some(f => f.toLowerCase() === 'id');
   const fields = hasId ? [...spec.fields] : ['Id', ...spec.fields];
-  return { ...spec, fields };
+  // One representation downstream: the Id form is the general form with a
+  // field of 'Id', so renderSoql never has to know about both.
+  const whereIn = spec.whereIn ?? (spec.whereIdIn ? { field: 'Id', bind: spec.whereIdIn } : undefined);
+  return { ...spec, fields, whereIn };
 }
 
 export function renderSoql(query: SoqlQuery): string {
   const parts = [`SELECT ${query.fields.join(', ')}`, `FROM ${query.object}`];
-  if (query.whereIdIn) parts.push(`WHERE Id IN :${query.whereIdIn}`);
+  if (query.whereIn) parts.push(`WHERE ${query.whereIn.field} IN :${query.whereIn.bind}`);
   // Spec decision: generated Apex targets 58.0+, so user mode is unconditional.
   parts.push('WITH USER_MODE');
   if (query.orderBy) {

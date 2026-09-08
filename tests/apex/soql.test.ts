@@ -70,3 +70,30 @@ describe('renderSoql', () => {
     expect(order.every((i) => i >= 0)).toBe(true);
   });
 });
+
+describe('whereIn', () => {
+  it('binds a named field, not only Id', () => {
+    const q = soql({
+      object: 'LLC_BI__Pricing_Stream__c', fields: ['Id'],
+      whereIn: { field: 'LLC_BI__Loan__c', bind: 'loanIds' },
+    });
+    expect(renderSoql(q)).toContain('WHERE LLC_BI__Loan__c IN :loanIds');
+  });
+
+  it('still renders the Id shorthand', () => {
+    expect(renderSoql(soql({ object: 'Account', fields: ['Id'], whereIdIn: 'ids' })))
+      .toContain('WHERE Id IN :ids');
+  });
+
+  it('validates the bound field name', () => {
+    expect(() => soql({
+      object: 'Account', fields: ['Id'], whereIn: { field: '1bad', bind: 'ids' },
+    })).toThrow(ApexTypeError);
+  });
+
+  it('validates the bind variable name', () => {
+    expect(() => soql({
+      object: 'Account', fields: ['Id'], whereIn: { field: 'Name', bind: 'not valid' },
+    })).toThrow(ApexTypeError);
+  });
+});
