@@ -29,7 +29,16 @@ export function parseConditionLogic(logic: string, count: number): LogicNode {
     return children.length === 1 ? children[0] : { kind: simple, children };
   }
 
-  const tokens = logic.match(/\d+|AND|OR|\(|\)/gi) ?? [];
+  const tokens = logic.match(/\d+|\bAND\b|\bOR\b|\(|\)/gi) ?? [];
+  // Free-floating regex matching silently skips whatever it does not recognise,
+  // so '1 XOR 2' tokenised to [1, OR, 2] and parsed as `1 OR 2` — a wrong tree
+  // returned with no error. Requiring full consumption turns any unrecognised
+  // character into a refusal instead.
+  if (tokens.join('').toUpperCase() !== logic.replace(/\s+/g, '').toUpperCase()) {
+    throw new UnsupportedConstructError(
+      `Condition logic '${logic}' contains something this parser does not recognise.`
+    );
+  }
   let at = 0;
   const peek = (): string | undefined => tokens[at];
   const take = (): string | undefined => tokens[at++];
