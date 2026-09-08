@@ -1594,7 +1594,10 @@ export function lowerValue(value: FlowValue, ctx: LowerContext): ApexExpr {
     case 'boolean':
       return literal(BOOLEAN, value.raw === 'true' ? 'true' : 'false');
     case 'none':
-      return literal(STRING, 'null');
+      // NULL, not STRING: isAssignable(DECIMAL, STRING) is false, so a
+      // String-typed null would be refused by declare()/assign() even though
+      // `Decimal d = null;` is legal Apex. Verified against the compiler.
+      return literal(NULL, 'null');
     case 'reference':
       return lowerReference(value.raw ?? '', ctx);
     default:
