@@ -1,7 +1,7 @@
 import { ApexTypeError } from '../../src/apex/errors.js';
-import { literal, variable } from '../../src/apex/expr.js';
+import { comparison, literal, methodCall, variable } from '../../src/apex/expr.js';
 import { soql } from '../../src/apex/soql.js';
-import { assign, declare, ifThen, memberWrite, queryInto } from '../../src/apex/stmt.js';
+import { assign, declare, ifThen, invoke, memberWrite, queryInto } from '../../src/apex/stmt.js';
 import { emitStmt } from '../../src/apex/emit.js';
 import {
   BOOLEAN, DATE, DATETIME, DECIMAL, ID, INTEGER, OBJECT, STRING, listOf, sobjectType,
@@ -123,5 +123,19 @@ describe('memberWrite', () => {
   it('refuses an untyped value', () => {
     expect(() => memberWrite('msg', 'Message', variable(OBJECT, 'raw')))
       .toThrow(ApexTypeError);
+  });
+});
+
+describe('invoke', () => {
+  it('emits a method call as a statement', () => {
+    expect(emitStmt(invoke(methodCall(variable(listOf(STRING), 'msgs'), 'clear', [], BOOLEAN))))
+      .toBe('msgs.clear();');
+  });
+
+  it('refuses an expression Apex cannot use as a statement', () => {
+    // `amount > 1000;` is not a statement. Only a call is.
+    expect(() => invoke(comparison(variable(DECIMAL, 'amount'), '>', literal(DECIMAL, '1000'))))
+      .toThrow(ApexTypeError);
+    expect(() => invoke(variable(STRING, 'name'))).toThrow(ApexTypeError);
   });
 });
