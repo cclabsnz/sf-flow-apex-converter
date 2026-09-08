@@ -39,6 +39,9 @@ export function flowTypeToApex(
       case 'double':
       case 'percent':
         return DECIMAL;
+      // Flow has no separate integer storage: every numeric, whatever the
+      // metadata calls it, is stored and surfaced as a Decimal. Deliberate,
+      // not an oversight — do not "fix" this to Integer in a later milestone.
       case 'int':
       case 'integer':
         return DECIMAL;
@@ -105,7 +108,18 @@ export function declarationTypeSource(ir: FlowIR): TypeSource {
   const resolveField = (object: string | undefined, field: string): ResolvedType => {
     const standard = STANDARD_FIELDS[field.toLowerCase()];
     if (standard) {
-      return { type: standard, provenance: 'standard', note: `${field} is a standard field` };
+      // 'standard' means "read from the platform for this object". Without a
+      // resolved object there is no platform fact to read — the field NAME
+      // matching the standard-field table is a guess like any other, so it is
+      // reported as one rather than overstating what is actually known.
+      if (object !== undefined) {
+        return { type: standard, provenance: 'standard', note: `${field} is a standard field` };
+      }
+      return {
+        type: standard,
+        provenance: 'heuristic',
+        note: `${field} looks like a standard field, but its object is unresolved`,
+      };
     }
     return {
       type: heuristicFieldType(field),
@@ -116,7 +130,11 @@ export function declarationTypeSource(ir: FlowIR): TypeSource {
 
   return {
     resolve(reference: string): ResolvedType {
-      if (reference.startsWith('$Permission.')) {
+      // Case-folded on the prefix only: Flow and Apex both treat this
+      // identifier case-insensitively, but the permission NAME after the dot
+      // stays verbatim because it is passed through to
+      // FeatureManagement.checkPermission('...') later, where casing matters.
+      if (/^\$permission\./i.test(reference)) {
         return { type: BOOLEAN, provenance: 'standard', note: 'custom permission check' };
       }
 

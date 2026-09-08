@@ -83,6 +83,25 @@ describe('declarationTypeSource', () => {
     expect(r.type).toEqual(BOOLEAN);
   });
 
+  it('recognises a custom permission reference regardless of case', () => {
+    // Every other lookup in this module folds case because Apex and Flow do.
+    // This one did not, so a hand-edited Flow using $permission resolved to a
+    // String guess instead of a Boolean permission check.
+    const ts = declarationTypeSource(ir([]));
+    expect(ts.resolve('$permission.NC_RBNZ_TDTI').type).toEqual(BOOLEAN);
+    expect(ts.resolve('$PERMISSION.NC_RBNZ_TDTI').provenance).toBe('standard');
+  });
+
+  it('does not claim standard provenance when the object is unresolved', () => {
+    // The type may still be right, but 'standard' means "known for this object".
+    // Saying it when the object was never resolved is the overstatement this
+    // module exists to prevent.
+    const ts = declarationTypeSource(ir([]));
+    const r = ts.resolve('NoSuchThing.Id');
+    expect(r.provenance).toBe('heuristic');
+    expect(r.note).toMatch(/unresolved|unknown/i);
+  });
+
   it('falls back to a heuristic for an unknown reference rather than throwing', () => {
     // Refusing here would refuse the Flow; a flagged guess is the agreed policy.
     expect(declarationTypeSource(ir([])).resolve('Mystery').provenance).toBe('heuristic');
