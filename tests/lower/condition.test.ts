@@ -67,6 +67,18 @@ describe('parseConditionLogic', () => {
     expect(() => parseConditionLogic('1 AND', 2)).toThrow(UnsupportedConstructError);
     expect(() => parseConditionLogic('1 AND (2', 2)).toThrow(UnsupportedConstructError);
   });
+
+  it('refuses a keyword embedded in a larger word', () => {
+    // '1 XOR 2' tokenised to [1, OR, 2] and parsed as `1 OR 2` — silently the
+    // wrong tree, which changes which branch the generated Apex takes.
+    expect(() => parseConditionLogic('1 XOR 2', 3)).toThrow(UnsupportedConstructError);
+    expect(() => parseConditionLogic('1 GRAND 2', 3)).toThrow(UnsupportedConstructError);
+  });
+
+  it('refuses characters that belong to no token', () => {
+    expect(() => parseConditionLogic('-1', 3)).toThrow(UnsupportedConstructError);
+    expect(() => parseConditionLogic('1 AND $', 3)).toThrow(UnsupportedConstructError);
+  });
 });
 
 describe('lowerCondition', () => {
