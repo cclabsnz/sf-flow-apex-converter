@@ -1,5 +1,5 @@
 import { ApexTypeError } from './errors.js';
-import { ApexType, BOOLEAN, isComparable, isUntyped, renderType } from './types.js';
+import { ApexType, BOOLEAN, isAssignable, isComparable, isUntyped, renderType } from './types.js';
 
 export type OrderingOperator = '<' | '>' | '<=' | '>=';
 export type EqualityOperator = '==' | '!=';
@@ -15,8 +15,25 @@ export type ApexExpr =
   | { node: 'nullTest'; type: ApexType; operand: ApexExpr; negated: boolean }
   | { node: 'methodCall'; type: ApexType; target: ApexExpr; method: string; args: ApexExpr[] };
 
-/** A literal, already rendered as Apex source (quotes included for strings). */
+/**
+ * A single literal atom, already rendered as Apex source (quotes included for
+ * strings): `1000`, `-2.5`, `'Funded'`, `true`, `null`.
+ *
+ * Restricted to one atom on purpose. Literal text is spliced in verbatim and is
+ * the one expression the emitter never parenthesises, so a compound string here
+ * silently defeats the precedence guarantee the rest of the module provides:
+ * `logical('&&', [literal(BOOLEAN, 'a || b'), c])` emitted `a || b && c`, which
+ * Apex reads as `a || (b && c)`. Build compound expressions from nodes instead.
+ */
+const ATOM = /^(?:-?\d+(?:\.\d+)?|'(?:[^'\\]|\\.)*'|null|true|false)$/i;
+
 export function literal(type: ApexType, text: string): ApexExpr {
+  if (!ATOM.test(text)) {
+    throw new ApexTypeError(
+      `literal() takes a single Apex atom, not ${JSON.stringify(text)}. ` +
+        `Build compound expressions from nodes so the emitter can parenthesise them.`
+    );
+  }
   return { node: 'literal', type, text };
 }
 
@@ -47,6 +64,28 @@ function requireOperand(e: ApexExpr, what: string): void {
   }
 }
 
+/** Apex has no truthiness: conditions and logical operands must be Boolean. */
+export function requireBoolean(e: ApexExpr, what: string): void {
+  if (e.type.kind !== 'Boolean') {
+    throw new ApexTypeError(`${what} must be Boolean; got ${renderType(e.type)}.`);
+  }
+}
+
+/**
+ * Both sides of a comparison must be compatible with each other, not merely
+ * individually valid. Checking operands in isolation let `s < d` through for a
+ * String and a Date — each is orderable alone, and the org rejects the pair with
+ * "Comparison arguments must be compatible types".
+ */
+function requireCompatible(left: ApexExpr, right: ApexExpr, op: string): void {
+  if (!isAssignable(left.type, right.type) && !isAssignable(right.type, left.type)) {
+    throw new ApexTypeError(
+      `Apex cannot compare ${renderType(left.type)} with ${renderType(right.type)} ` +
+        `using '${op}'.`
+    );
+  }
+}
+
 const ORDERING_OPERATORS: readonly string[] = ['<', '>', '<=', '>='];
 
 /** `<`, `>`, `<=`, `>=` — only over types Apex can order. */
@@ -72,6 +111,7 @@ export function comparison(left: ApexExpr, op: OrderingOperator, right: ApexExpr
       );
     }
   }
+  requireCompatible(left, right, op);
   return { node: 'comparison', type: BOOLEAN, op, left, right };
 }
 
@@ -79,6 +119,7 @@ export function comparison(left: ApexExpr, op: OrderingOperator, right: ApexExpr
 export function equality(left: ApexExpr, op: EqualityOperator, right: ApexExpr): ApexExpr {
   requireOperand(left, `the left operand of '${op}'`);
   requireOperand(right, `the right operand of '${op}'`);
+  requireCompatible(left, right, op);
   return { node: 'equality', type: BOOLEAN, op, left, right };
 }
 
@@ -92,10 +133,13 @@ export function nullTest(operand: ApexExpr, negated: boolean): ApexExpr {
 }
 
 export function logical(op: LogicalOperator, operands: ApexExpr[]): ApexExpr {
+  // Joining an empty list produced `if () { ... }`, a syntax error that reached
+  // the emitter silently. A decision with no conditions must fail here instead.
+  if (operands.length === 0) {
+    throw new ApexTypeError(`'${op}' needs at least one operand; none were given.`);
+  }
   for (const o of operands) {
-    if (o.type.kind !== 'Boolean') {
-      throw new ApexTypeError(`'${op}' needs Boolean operands; got ${renderType(o.type)}.`);
-    }
+    requireBoolean(o, `an operand of '${op}'`);
   }
   return { node: 'logical', type: BOOLEAN, op, operands };
 }

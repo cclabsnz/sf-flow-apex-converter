@@ -56,7 +56,7 @@ describe('emitExpr', () => {
   });
 
   it('emits contains as a call', () => {
-    const e = methodCall(variable(STRING, 'name'), 'contains', [literal(STRING, "'x'")], STRING);
+    const e = methodCall(variable(STRING, 'name'), 'contains', [literal(STRING, "'x'")], BOOLEAN);
     expect(emitExpr(e)).toBe("name.contains('x')");
   });
 
@@ -84,6 +84,10 @@ describe('emitStmt', () => {
     // The 2.0.x generator computed these and then dropped them.
     expect(emitStmt(fieldWrite('record', 'Stage__c', literal(STRING, "'Funded'"))))
       .toBe("record.put('Stage__c', 'Funded');");
+  });
+
+  it('collapses an empty block instead of leaving a blank line', () => {
+    expect(emitStmt(ifThen(variable(BOOLEAN, 'isReady'), []))).toBe('if (isReady) {\n}');
   });
 
   it('collects a record rather than issuing DML', () => {
