@@ -11,7 +11,7 @@
  * Stored lowercase and matched case-insensitively: Apex is a case-insensitive
  * language, and `Integer List = 1;` fails exactly as `Integer list = 1;` does.
  */
-const RESERVED: ReadonlySet<string> = new Set([
+export const RESERVED: ReadonlySet<string> = new Set([
   // Declaration and modifier keywords
   'abstract', 'class', 'const', 'enum', 'extends', 'final', 'global', 'implements',
   'interface', 'override', 'package', 'private', 'protected', 'public', 'static',
@@ -33,6 +33,12 @@ const RESERVED: ReadonlySet<string> = new Set([
   'update', 'upsert', 'using', 'where',
   // Platform
   'exception', 'system', 'trigger',
+  // Second probe pass, prompted by review: these are on Salesforce's documented
+  // keyword list and the compiler does reject them. The same pass cleared the SOQL
+  // date literals (today, yesterday, this_month, last_n_days, ...) and returning,
+  // stat, tolabel, tolower, toupper, convertcurrency, which are all accepted.
+  'activate', 'autonomous', 'bigdecimal', 'bulk', 'collect', 'end', 'hint', 'nulls',
+  'parallel', 'pragma', 'retrieve', 'transaction',
 ]);
 
 /**
@@ -83,14 +89,18 @@ export class Scope {
       .replace(/_+/g, '_')  // Collapse underscore runs
       .replace(/_+$/, '');  // Strip trailing underscores
     if (cleaned === '' || /^_+$/.test(cleaned)) return 'v';
-    // Prefix if starts with digit or underscore, removing any leading underscores
-    if (/^[0-9_]/.test(cleaned)) {
-      const noLeading = cleaned.replace(/^_+/, '');
-      return `v${noLeading}`;
+
+    // A pipeline, not a chain of early returns. The keyword check has to see the
+    // FINAL candidate: prefixing can create a reserved word rather than only
+    // avoiding one — '_oid' strips to 'oid', prefixes to 'void'. An early return
+    // in the branch above skipped the guard entirely and emitted `String void = ...`.
+    let candidate = cleaned;
+    if (/^[0-9_]/.test(candidate)) {
+      candidate = `v${candidate.replace(/^_+/, '')}`;
     }
-    // Same prefix rule for a name that collides with a keyword. Prefixing can never
-    // produce another reserved word, so one pass is enough.
-    if (RESERVED.has(cleaned.toLowerCase())) return `v${cleaned}`;
-    return cleaned;
+    if (RESERVED.has(candidate.toLowerCase())) {
+      candidate = `v${candidate}`;
+    }
+    return candidate;
   }
 }
