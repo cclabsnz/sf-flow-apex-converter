@@ -142,4 +142,20 @@ describe('Scope', () => {
       expect(RESERVED.has(`v${word}`)).toBe(false);
     }
   });
+
+  it('caps an identifier at the length Apex accepts', () => {
+    // Verified: 255 characters compiles, 256 does not. Flow element labels can
+    // be long, and a name is truncated rather than emitted unusable.
+    const result = new Scope().allocate('a'.repeat(400));
+    expect(result.length).toBeLessThanOrEqual(255);
+    expect(/^[A-Za-z][A-Za-z0-9_]*$/.test(result)).toBe(true);
+  });
+
+  it('keeps truncated names unique', () => {
+    const s = new Scope();
+    const a = s.allocate('b'.repeat(400));
+    const b = s.allocate('b'.repeat(400));
+    expect(a).not.toBe(b);
+    expect(b.length).toBeLessThanOrEqual(255);
+  });
 });

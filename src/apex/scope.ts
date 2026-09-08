@@ -49,6 +49,9 @@ export const RESERVED: ReadonlySet<string> = new Set([
  * name was built by appending a suffix that the sanitiser had already added,
  * producing validateX_Bulkified_Bulkified. Allocation removes the possibility.
  */
+/** Apex rejects identifiers longer than this; 255 compiles, 256 does not. */
+const MAX_IDENTIFIER = 255;
+
 export class Scope {
   private readonly taken = new Set<string>();
 
@@ -64,13 +67,16 @@ export class Scope {
    * suffix rather than being silently reused.
    */
   allocate(preferred: string): string {
-    const base = Scope.sanitise(preferred);
+    const base = Scope.sanitise(preferred).slice(0, MAX_IDENTIFIER);
     if (!this.has(base)) {
       this.taken.add(base);
       return base;
     }
     for (let n = 2; ; n += 1) {
-      const candidate = `${base}${n}`;
+      // Trim the base, not the suffix: a truncated name that drops its counter
+      // would collide with the name it was disambiguating from.
+      const suffix = String(n);
+      const candidate = `${base.slice(0, MAX_IDENTIFIER - suffix.length)}${suffix}`;
       if (!this.has(candidate)) {
         this.taken.add(candidate);
         return candidate;

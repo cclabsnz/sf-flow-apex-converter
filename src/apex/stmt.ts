@@ -1,7 +1,7 @@
-import { ApexExpr } from './expr.js';
+import { ApexExpr, requireBoolean } from './expr.js';
 import { SoqlQuery } from './soql.js';
 import { ApexTypeError } from './errors.js';
-import { ApexType, isAssignable, isUntyped, renderType } from './types.js';
+import { ApexType, isAssignable, isUntyped, renderType, sameName } from './types.js';
 
 export type DmlOperation = 'insert' | 'update' | 'delete';
 
@@ -52,18 +52,33 @@ export function collectInto(collection: string, record: string): ApexStmt {
   return { stmt: 'collectInto', collection, record };
 }
 
+/**
+ * `List<Account> accts = [SELECT ...];`
+ *
+ * Unlike the other statements, this one holds both the target type and the query,
+ * so it can check them against each other. soql() already exists to stop a query
+ * naming the wrong object (DEFECT 3); letting the variable say List<Contact> while
+ * the query says FROM Account reopens the same door one step later.
+ */
 export function queryInto(type: ApexType, name: string, query: SoqlQuery): ApexStmt {
+  if (type.kind !== 'List' || type.of.kind !== 'SObject') {
+    throw new ApexTypeError(
+      `A query result is a List of SObject; '${name}' was declared ` +
+        `${renderType(type)}, which Apex cannot assign a query to.`
+    );
+  }
+  if (type.of.name !== undefined && !sameName(type.of.name, query.object)) {
+    throw new ApexTypeError(
+      `'${name}' is a List<${type.of.name}> but the query selects FROM ${query.object}.`
+    );
+  }
   return { stmt: 'queryInto', type, name, query };
 }
 
 export function ifThen(condition: ApexExpr, body: ApexStmt[]): ApexStmt {
   // `if (5)` is not C. The compiler is explicit: "Condition expression must be
   // of type Boolean: Integer".
-  if (condition.type.kind !== 'Boolean') {
-    throw new ApexTypeError(
-      `An if condition must be Boolean; got ${renderType(condition.type)}.`
-    );
-  }
+  requireBoolean(condition, 'An if condition');
   return { stmt: 'ifThen', condition, body };
 }
 
