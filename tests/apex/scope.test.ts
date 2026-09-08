@@ -1,4 +1,4 @@
-import { Scope } from '../../src/apex/scope.js';
+import { RESERVED, Scope } from '../../src/apex/scope.js';
 
 describe('Scope', () => {
   it('returns the preferred name when it is free', () => {
@@ -100,5 +100,46 @@ describe('Scope', () => {
     const s = new Scope();
     expect(s.allocate('vupdate')).toBe('vupdate');
     expect(s.allocate('update')).toBe('vupdate2');
+  });
+
+  it('guards a reserved word produced by the prefix rule itself', () => {
+    // The digit/underscore branch prefixes with v and used to return immediately,
+    // never reaching the keyword check. '_oid' therefore sanitised to the literal
+    // reserved word 'void'. Every path must funnel through the guard.
+    expect(new Scope().allocate('_oid')).not.toBe('void');
+    expect(new Scope().allocate('__oid')).not.toBe('void');
+    expect(new Scope().allocate('_irtual')).not.toBe('virtual');
+  });
+
+  it('guards a prefix-produced reserved word case-insensitively', () => {
+    // 'vOID' compiles no better than 'void': Apex folds case when matching keywords.
+    for (const input of ['_OID', '_IRTUAL', '__Irtual']) {
+      const result = new Scope().allocate(input);
+      expect(['void', 'virtual']).not.toContain(result.toLowerCase());
+    }
+  });
+
+  it('never emits a reserved word for any word in its own list', () => {
+    // Exhaustive rather than sampled: the previous bug was a word nobody thought
+    // to test. This fails the moment an entry is added that the guard cannot escape.
+    for (const word of RESERVED) {
+      expect(RESERVED.has(new Scope().allocate(word).toLowerCase())).toBe(false);
+    }
+  });
+
+  it('cannot be driven to a reserved word by the underscore-strip path', () => {
+    // '_oid' -> 'oid' -> 'void' was the escape. Check the whole class: for every
+    // reserved word, feed the input that would strip-and-prefix back into it.
+    for (const word of RESERVED) {
+      if (!word.startsWith('v')) continue;
+      const bait = `_${word.slice(1)}`;
+      expect(RESERVED.has(new Scope().allocate(bait).toLowerCase())).toBe(false);
+    }
+  });
+
+  it('terminates: prefixing a reserved word never yields another one', () => {
+    for (const word of RESERVED) {
+      expect(RESERVED.has(`v${word}`)).toBe(false);
+    }
   });
 });
