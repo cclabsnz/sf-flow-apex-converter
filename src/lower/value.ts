@@ -1,5 +1,5 @@
 import { ApexExpr, fieldRead, literal, methodCall, stringLiteral, variable } from '../apex/expr.js';
-import { BOOLEAN, DECIMAL, STRING, sobjectType } from '../apex/types.js';
+import { BOOLEAN, DECIMAL, NULL, sobjectType } from '../apex/types.js';
 import { FlowValue } from '../ir/types.js';
 import { LowerContext, apexName } from './context.js';
 
@@ -63,7 +63,7 @@ export function lowerValue(value: FlowValue, ctx: LowerContext): ApexExpr {
     case 'boolean':
       return literal(BOOLEAN, value.raw === 'true' ? 'true' : 'false');
     case 'none':
-      return literal(STRING, 'null');
+      return literal(NULL, 'null');
     case 'reference':
       return lowerReference(value.raw ?? '', ctx);
     default:

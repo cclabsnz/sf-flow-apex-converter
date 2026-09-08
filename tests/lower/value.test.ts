@@ -1,6 +1,6 @@
 import { emitExpr } from '../../src/apex/emit.js';
 import { Scope } from '../../src/apex/scope.js';
-import { BOOLEAN } from '../../src/apex/types.js';
+import { BOOLEAN, DECIMAL, isAssignable, sobjectType } from '../../src/apex/types.js';
 import { FlowIR } from '../../src/ir/types.js';
 import { LowerContext } from '../../src/lower/context.js';
 import { declarationTypeSource } from '../../src/lower/typeSource.js';
@@ -42,6 +42,13 @@ describe('lowerValue', () => {
 
   it('lowers none to null', () => {
     expect(emitExpr(lowerValue({ kind: 'none' }, ctx()))).toBe('null');
+  });
+
+  it('lowers none to a null assignable to any type', () => {
+    const e = lowerValue({ kind: 'none' }, ctx());
+    expect(emitExpr(e)).toBe('null');
+    expect(isAssignable(DECIMAL, e.type)).toBe(true);
+    expect(isAssignable(sobjectType('Account'), e.type)).toBe(true);
   });
 
   it('lowers a plain reference to the allocated identifier', () => {

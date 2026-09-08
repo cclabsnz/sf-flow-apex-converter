@@ -10,7 +10,9 @@ export type ApexType =
   | { kind: 'SObject'; name?: string }
   | { kind: 'List'; of: ApexType }
   /** What `record.get()` returns. Deliberately near-useless: see isComparable. */
-  | { kind: 'Object' };
+  | { kind: 'Object' }
+  /** The type of the `null` literal. Assignable to everything; orderable against nothing. */
+  | { kind: 'Null' };
 
 export const ID: ApexType = { kind: 'Id' };
 export const STRING: ApexType = { kind: 'String' };
@@ -20,6 +22,7 @@ export const INTEGER: ApexType = { kind: 'Integer' };
 export const DATE: ApexType = { kind: 'Date' };
 export const DATETIME: ApexType = { kind: 'Datetime' };
 export const OBJECT: ApexType = { kind: 'Object' };
+export const NULL: ApexType = { kind: 'Null' };
 
 export function sobjectType(name?: string): ApexType {
   return { kind: 'SObject', name };
@@ -35,6 +38,10 @@ export function renderType(type: ApexType): string {
       return type.name ?? 'SObject';
     case 'List':
       return `List<${renderType(type.of)}>`;
+    case 'Null':
+      // A null literal needs no type in Apex source. If this ever renders, a
+      // caller has used NULL as a declared type, which is a bug in the caller.
+      return 'Object';
     default:
       return type.kind;
   }
@@ -87,6 +94,9 @@ export function sameName(a: string | undefined, b: string | undefined): boolean 
  */
 export function isAssignable(target: ApexType, source: ApexType): boolean {
   if (target.kind === 'Object') return true;
+  // Verified against the compiler: Decimal, Integer, Boolean, Date, Id, SObject
+  // and List all accept `= null`.
+  if (source.kind === 'Null') return true;
   if (source.kind === 'Object') return false;
   if (target.kind === 'List' && source.kind === 'List') {
     // Related in EITHER direction. Verified against the compiler, which is more
