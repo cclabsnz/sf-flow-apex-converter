@@ -1,7 +1,9 @@
 import { ApexTypeError } from '../../src/apex/errors.js';
 import {
-  comparison, equality, fieldRead, literal, logical, methodCall, nullTest, variable,
+  comparison, construct, equality, fieldRead, literal, logical, methodCall, nullTest, stringLiteral, variable,
 } from '../../src/apex/expr.js';
+import { emitExpr } from '../../src/apex/emit.js';
+import { declare } from '../../src/apex/stmt.js';
 import { BOOLEAN, DATE, DECIMAL, ID, INTEGER, OBJECT, STRING, listOf, sobjectType } from '../../src/apex/types.js';
 
 describe('fieldRead', () => {
@@ -143,5 +145,63 @@ describe('literal', () => {
     expect(() => literal(STRING, "'it\\'s'")).not.toThrow();
     expect(() => literal(BOOLEAN, 'true')).not.toThrow();
     expect(() => literal(ID, 'null')).not.toThrow();
+  });
+});
+
+describe('stringLiteral', () => {
+  it('quotes a plain value', () => {
+    const e = stringLiteral('Funded');
+    if (e.node !== 'literal') throw new Error('expected literal node');
+    expect(e.text).toBe("'Funded'");
+  });
+
+  it('escapes an embedded apostrophe', () => {
+    // The O'Brien case. Emitting 'O'Brien' unescaped ends the literal early
+    // and leaves `Brien'` as a syntax error.
+    const e = stringLiteral("O'Brien");
+    if (e.node !== 'literal') throw new Error('expected literal node');
+    expect(e.text).toBe("'O\\'Brien'");
+  });
+
+  it('escapes a backslash before escaping quotes', () => {
+    // Order matters: escaping quotes first would then double the backslash
+    // this step adds, producing 'a\\\'b'.
+    const e = stringLiteral("a\\b");
+    if (e.node !== 'literal') throw new Error('expected literal node');
+    expect(e.text).toBe("'a\\\\b'");
+  });
+
+  it('produces a value literal() accepts as an atom', () => {
+    // literal()'s atom guard is what stops compound text defeating the
+    // emitter's parenthesisation. stringLiteral must satisfy it by construction.
+    const e = stringLiteral("it's a || b");
+    if (e.node !== 'literal') throw new Error('expected literal node');
+    expect(() => literal(STRING, e.text)).not.toThrow();
+  });
+
+  it('handles newlines and tabs', () => {
+    const e1 = stringLiteral('a\nb');
+    if (e1.node !== 'literal') throw new Error('expected literal node');
+    expect(e1.text).toBe("'a\\nb'");
+    const e2 = stringLiteral('a\tb');
+    if (e2.node !== 'literal') throw new Error('expected literal node');
+    expect(e2.text).toBe("'a\\tb'");
+  });
+});
+
+describe('construct', () => {
+  it('constructs an SObject', () => {
+    expect(emitExpr(construct(sobjectType('Account'), []))).toBe('new Account()');
+  });
+
+  it('constructs a typed list', () => {
+    expect(emitExpr(construct(listOf(sobjectType('Account')), [])))
+      .toBe('new List<Account>()');
+  });
+
+  it('is assignable to its own declared type', () => {
+    // declare() validates assignability, so this must satisfy isAssignable.
+    expect(() => declare(sobjectType('Account'), 'a', construct(sobjectType('Account'), [])))
+      .not.toThrow();
   });
 });

@@ -13,7 +13,8 @@ export type ApexStmt =
   | { stmt: 'queryInto'; type: ApexType; name: string; query: SoqlQuery }
   | { stmt: 'ifThen'; condition: ApexExpr; body: ApexStmt[] }
   | { stmt: 'forEach'; itemType: ApexType; item: string; collection: string; body: ApexStmt[] }
-  | { stmt: 'dmlBulk'; operation: DmlOperation; collection: string };
+  | { stmt: 'dmlBulk'; operation: DmlOperation; collection: string }
+  | { stmt: 'memberWrite'; target: string; member: string; value: ApexExpr };
 
 export function declare(type: ApexType, name: string, init: ApexExpr | null): ApexStmt {
   if (init !== null && !isAssignable(type, init.type)) {
@@ -93,4 +94,30 @@ export function forEach(
 
 export function dmlBulk(operation: DmlOperation, collection: string): ApexStmt {
   return { stmt: 'dmlBulk', operation, collection };
+}
+
+const IDENTIFIER = /^[A-Za-z][A-Za-z0-9_]*$/;
+
+function requireIdentifier(value: string, what: string): void {
+  if (!IDENTIFIER.test(value)) {
+    throw new ApexTypeError(`${what} '${value}' is not a valid Apex identifier.`);
+  }
+}
+
+/**
+ * `obj.Member = value;` for an Apex-defined type.
+ *
+ * Distinct from fieldWrite, which emits `record.put('F', v)` and is SObject-only.
+ * Both names are validated rather than interpolated: passing a dotted string as
+ * the target would otherwise emit `a.b.Member = v` with nothing checking it.
+ */
+export function memberWrite(target: string, member: string, value: ApexExpr): ApexStmt {
+  requireIdentifier(target, 'A member-write target');
+  requireIdentifier(member, 'A member name');
+  if (isUntyped(value.type)) {
+    throw new ApexTypeError(
+      `Cannot write an untyped (Object) expression to '${target}.${member}'.`
+    );
+  }
+  return { stmt: 'memberWrite', target, member, value };
 }

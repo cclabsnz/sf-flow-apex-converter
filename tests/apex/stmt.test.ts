@@ -1,7 +1,8 @@
 import { ApexTypeError } from '../../src/apex/errors.js';
 import { literal, variable } from '../../src/apex/expr.js';
 import { soql } from '../../src/apex/soql.js';
-import { assign, declare, ifThen, queryInto } from '../../src/apex/stmt.js';
+import { assign, declare, ifThen, memberWrite, queryInto } from '../../src/apex/stmt.js';
+import { emitStmt } from '../../src/apex/emit.js';
 import {
   BOOLEAN, DATE, DATETIME, DECIMAL, ID, INTEGER, OBJECT, STRING, listOf, sobjectType,
 } from '../../src/apex/types.js';
@@ -98,5 +99,29 @@ describe('queryInto', () => {
     expect(() => queryInto(listOf(sobjectType('account')), 'accts', accountQuery))
       .not.toThrow();
     expect(() => queryInto(listOf(sobjectType()), 'records', accountQuery)).not.toThrow();
+  });
+});
+
+describe('memberWrite', () => {
+  it('writes a member on an Apex-defined type', () => {
+    // ValidationMessage.Message = errorText;  — not an SObject, so put() is wrong.
+    expect(emitStmt(memberWrite('msg', 'Message', variable(STRING, 'errorText'))))
+      .toBe('msg.Message = errorText;');
+  });
+
+  it('refuses an invalid target identifier', () => {
+    // A dotted name smuggled in as the target would emit a.b.c = x with no check.
+    expect(() => memberWrite('msg.inner', 'Message', variable(STRING, 'x')))
+      .toThrow(ApexTypeError);
+  });
+
+  it('refuses an invalid member name', () => {
+    expect(() => memberWrite('msg', '2Message', variable(STRING, 'x')))
+      .toThrow(ApexTypeError);
+  });
+
+  it('refuses an untyped value', () => {
+    expect(() => memberWrite('msg', 'Message', variable(OBJECT, 'raw')))
+      .toThrow(ApexTypeError);
   });
 });

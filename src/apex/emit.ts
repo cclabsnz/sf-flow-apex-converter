@@ -59,6 +59,8 @@ export function emitExpr(e: ApexExpr): string {
       return `${operand(e.operand, e)} ${e.negated ? '!=' : '=='} null`;
     case 'methodCall':
       return `${operand(e.target, e)}.${e.method}(${e.args.map(emitExpr).join(', ')})`;
+    case 'construct':
+      return `new ${renderType(e.type)}(${e.args.map(emitExpr).join(', ')})`;
   }
 }
 
@@ -86,6 +88,8 @@ export function emitStmt(s: ApexStmt, depth = 0): string {
       return `${pad}${s.name} = ${emitExpr(s.value)};`;
     case 'fieldWrite':
       return `${pad}${s.record}.put('${s.field}', ${emitExpr(s.value)});`;
+    case 'memberWrite':
+      return `${pad}${s.target}.${s.member} = ${emitExpr(s.value)};`;
     case 'collectInto':
       return `${pad}${s.collection}.add(${s.record});`;
     case 'queryInto': {
