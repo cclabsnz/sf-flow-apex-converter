@@ -14,7 +14,8 @@ export type ApexStmt =
   | { stmt: 'ifThen'; condition: ApexExpr; body: ApexStmt[] }
   | { stmt: 'forEach'; itemType: ApexType; item: string; collection: string; body: ApexStmt[] }
   | { stmt: 'dmlBulk'; operation: DmlOperation; collection: string }
-  | { stmt: 'memberWrite'; target: string; member: string; value: ApexExpr };
+  | { stmt: 'memberWrite'; target: string; member: string; value: ApexExpr }
+  | { stmt: 'invoke'; call: ApexExpr };
 
 export function declare(type: ApexType, name: string, init: ApexExpr | null): ApexStmt {
   if (init !== null && !isAssignable(type, init.type)) {
@@ -120,4 +121,18 @@ export function memberWrite(target: string, member: string, value: ApexExpr): Ap
     );
   }
   return { stmt: 'memberWrite', target, member, value };
+}
+
+/**
+ * A method call used as a statement: `msgs.clear();`
+ *
+ * Restricted to method calls on purpose. Apex accepts only a call as an
+ * expression-statement, and a general "any expression" statement would be a
+ * hole through which `amount > 1000;` could be emitted.
+ */
+export function invoke(call: ApexExpr): ApexStmt {
+  if (call.node !== 'methodCall') {
+    throw new ApexTypeError('Only a method call can be used as a statement.');
+  }
+  return { stmt: 'invoke', call };
 }

@@ -92,6 +92,8 @@ export function emitStmt(s: ApexStmt, depth = 0): string {
       return `${pad}${s.target}.${s.member} = ${emitExpr(s.value)};`;
     case 'collectInto':
       return `${pad}${s.collection}.add(${s.record});`;
+    case 'invoke':
+      return `${pad}${emitExpr(s.call)};`;
     case 'queryInto': {
       const q = renderSoql(s.query)
         .split('\n')
