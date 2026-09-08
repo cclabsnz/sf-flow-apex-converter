@@ -66,6 +66,15 @@ function block(body: ApexStmt[], depth: number): string {
   return body.map((s) => emitStmt(s, depth)).join('\n');
 }
 
+/**
+ * The `{ ... }` of a control structure, closed at `pad`. An empty body collapses
+ * to `{\n}` rather than leaving a stray blank line inside the braces.
+ */
+function braces(body: ApexStmt[], depth: number, pad: string): string {
+  const inner = block(body, depth + 1);
+  return inner === '' ? `{\n${pad}}` : `{\n${inner}\n${pad}}`;
+}
+
 export function emitStmt(s: ApexStmt, depth = 0): string {
   const pad = INDENT.repeat(depth);
   switch (s.stmt) {
@@ -87,11 +96,11 @@ export function emitStmt(s: ApexStmt, depth = 0): string {
       return `${pad}${renderType(s.type)} ${s.name} = [\n${q}\n${pad}];`;
     }
     case 'ifThen':
-      return `${pad}if (${emitExpr(s.condition)}) {\n${block(s.body, depth + 1)}\n${pad}}`;
+      return `${pad}if (${emitExpr(s.condition)}) ${braces(s.body, depth, pad)}`;
     case 'forEach':
       return (
-        `${pad}for (${renderType(s.itemType)} ${s.item} : ${s.collection}) {\n` +
-        `${block(s.body, depth + 1)}\n${pad}}`
+        `${pad}for (${renderType(s.itemType)} ${s.item} : ${s.collection}) ` +
+        braces(s.body, depth, pad)
       );
     case 'dmlBulk': {
       const call = `Database.${s.operation}(${s.collection}, AccessLevel.USER_MODE);`;

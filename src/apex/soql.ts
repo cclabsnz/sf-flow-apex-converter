@@ -9,9 +9,8 @@ export interface SoqlSpec {
   limit?: number;
 }
 
-export interface SoqlQuery extends SoqlSpec {
-  fields: string[];
-}
+/** A spec that has passed soql()'s validation. */
+export type SoqlQuery = SoqlSpec;
 
 const IDENTIFIER = /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)*$/;
 

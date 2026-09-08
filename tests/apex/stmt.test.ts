@@ -1,6 +1,7 @@
 import { ApexTypeError } from '../../src/apex/errors.js';
 import { literal, variable } from '../../src/apex/expr.js';
-import { assign, declare, ifThen } from '../../src/apex/stmt.js';
+import { soql } from '../../src/apex/soql.js';
+import { assign, declare, ifThen, queryInto } from '../../src/apex/stmt.js';
 import {
   BOOLEAN, DATE, DATETIME, DECIMAL, ID, INTEGER, OBJECT, STRING, listOf, sobjectType,
 } from '../../src/apex/types.js';
@@ -72,5 +73,30 @@ describe('assign', () => {
     // Not via fieldRead — that refuses OBJECT itself, so it would pass without
     // assign checking anything. A bare Object variable reaches assign untouched.
     expect(() => assign('total', variable(OBJECT, 'raw'))).toThrow(ApexTypeError);
+  });
+});
+
+describe('queryInto', () => {
+  const accountQuery = soql({ object: 'Account', fields: ['Id'] });
+
+  it('refuses a target that is not a List of SObject', () => {
+    // `Integer n = [SELECT ...];` does not compile.
+    expect(() => queryInto(INTEGER, 'n', accountQuery)).toThrow(ApexTypeError);
+    expect(() => queryInto(sobjectType('Account'), 'a', accountQuery)).toThrow(ApexTypeError);
+  });
+
+  it('refuses a target whose object disagrees with the query', () => {
+    // soql() exists so a query names its own object (DEFECT 3). Letting the
+    // variable say Contact while the query says FROM Account reopens that door.
+    expect(() => queryInto(listOf(sobjectType('Contact')), 'cs', accountQuery))
+      .toThrow(ApexTypeError);
+  });
+
+  it('accepts a matching target, matching case-insensitively', () => {
+    expect(() => queryInto(listOf(sobjectType('Account')), 'accts', accountQuery))
+      .not.toThrow();
+    expect(() => queryInto(listOf(sobjectType('account')), 'accts', accountQuery))
+      .not.toThrow();
+    expect(() => queryInto(listOf(sobjectType()), 'records', accountQuery)).not.toThrow();
   });
 });
