@@ -1,5 +1,5 @@
 import {
-  BOOLEAN, DATE, DATETIME, DECIMAL, ID, INTEGER, OBJECT, STRING, isAssignable,
+  BOOLEAN, DATE, DATETIME, DECIMAL, ID, INTEGER, NULL, OBJECT, STRING, isAssignable,
   isComparable, isUntyped, listOf, renderType, sobjectType,
 } from '../../src/apex/types.js';
 
@@ -48,6 +48,10 @@ describe('isComparable', () => {
     expect(isComparable(BOOLEAN)).toBe(false);
     expect(isComparable(sobjectType('Account'))).toBe(false);
   });
+
+  it('refuses to order anything against null', () => {
+    expect(isComparable(NULL)).toBe(false);
+  });
 });
 
 describe('isUntyped', () => {
@@ -82,5 +86,13 @@ describe('isAssignable', () => {
       .toBe(false);
     expect(isAssignable(listOf(INTEGER), listOf(STRING))).toBe(false);
     expect(isAssignable(listOf(BOOLEAN), listOf(STRING))).toBe(false);
+  });
+
+  it('assigns null to every type', () => {
+    // `Decimal d = null;` compiles; typing null as String made isAssignable
+    // refuse it, which would have blocked legal assignments during lowering.
+    for (const t of [DECIMAL, INTEGER, BOOLEAN, DATE, ID, STRING, sobjectType('Account'), listOf(ID)]) {
+      expect(isAssignable(t, NULL)).toBe(true);
+    }
   });
 });
