@@ -1,5 +1,5 @@
 import { emitClass, ApexClass } from '../../src/apex/class.js';
-import { literal, variable } from '../../src/apex/expr.js';
+import { literal } from '../../src/apex/expr.js';
 import { assign, declare } from '../../src/apex/stmt.js';
 import { BOOLEAN, DECIMAL, STRING, listOf, sobjectType } from '../../src/apex/types.js';
 
@@ -33,7 +33,7 @@ describe('emitClass', () => {
         type: STRING, name: 'FIELD_NAME', init: literal(STRING, "'Amount__c'"),
       }],
     }));
-    expect(out).toContain("    private static final String FIELD_NAME = 'Amount__c';");
+    expect(out.split('\n')).toContain("    private static final String FIELD_NAME = 'Amount__c';");
   });
 
   it('emits a field with no initialiser', () => {
@@ -43,7 +43,7 @@ describe('emitClass', () => {
         type: STRING, name: 'Message', init: null,
       }],
     }));
-    expect(out).toContain('    public String Message;');
+    expect(out.split('\n')).toContain('    public String Message;');
   });
 
   it('emits a void method with parameters and an indented body', () => {
@@ -55,9 +55,9 @@ describe('emitClass', () => {
         doc: [],
       }],
     }));
-    expect(out).toContain('    public static void execute(List<Account> records) {');
-    expect(out).toContain('        Decimal total = 0;');
-    expect(out).toContain('    }');
+    expect(out.split('\n')).toContain('    public static void execute(List<Account> records) {');
+    expect(out.split('\n')).toContain('        Decimal total = 0;');
+    expect(out.split('\n')).toContain('    }');
   });
 
   it('emits a method with a return type and several parameters', () => {
@@ -69,7 +69,7 @@ describe('emitClass', () => {
         doc: [],
       }],
     }));
-    expect(out).toContain('    private static Boolean isReady(String stage, Decimal amount) {');
+    expect(out.split('\n')).toContain('    private static Boolean isReady(String stage, Decimal amount) {');
   });
 
   it('emits a method with an empty body without a stray blank line', () => {
@@ -102,7 +102,7 @@ describe('emitClass', () => {
         }],
       }],
     }));
-    expect(out).toContain('    public with sharing class Result {');
-    expect(out).toContain('        public String message;');
+    expect(out.split('\n')).toContain('    public with sharing class Result {');
+    expect(out.split('\n')).toContain('        public String message;');
   });
 });
