@@ -57,3 +57,6 @@ test-output/
 
 # Serena/Claude
 .serena/
+
+# Isolated worktrees for subagent-driven development
+.worktrees/
