@@ -1,5 +1,5 @@
 import { ApexTypeError } from './errors.js';
-import { ApexType, BOOLEAN, isAssignable, isComparable, isUntyped, renderType } from './types.js';
+import { ApexType, BOOLEAN, STRING, isAssignable, isComparable, isUntyped, renderType } from './types.js';
 
 export type OrderingOperator = '<' | '>' | '<=' | '>=';
 export type EqualityOperator = '==' | '!=';
@@ -13,7 +13,8 @@ export type ApexExpr =
   | { node: 'equality'; type: ApexType; op: EqualityOperator; left: ApexExpr; right: ApexExpr }
   | { node: 'logical'; type: ApexType; op: LogicalOperator; operands: ApexExpr[] }
   | { node: 'nullTest'; type: ApexType; operand: ApexExpr; negated: boolean }
-  | { node: 'methodCall'; type: ApexType; target: ApexExpr; method: string; args: ApexExpr[] };
+  | { node: 'methodCall'; type: ApexType; target: ApexExpr; method: string; args: ApexExpr[] }
+  | { node: 'construct'; type: ApexType; args: ApexExpr[] };
 
 /**
  * A single literal atom, already rendered as Apex source (quotes included for
@@ -35,6 +36,27 @@ export function literal(type: ApexType, text: string): ApexExpr {
     );
   }
   return { node: 'literal', type, text };
+}
+
+/**
+ * A String literal built from a raw value, with Apex escaping applied.
+ *
+ * `literal()` takes text that is already Apex source; this is the constructor
+ * for text that is not. Every Flow-derived string must come through here — a
+ * value containing an apostrophe passed to `literal()` directly would end its
+ * own literal and emit a syntax error.
+ *
+ * Backslash is escaped first. Doing quotes first would then double the
+ * backslashes this step adds.
+ */
+export function stringLiteral(value: string): ApexExpr {
+  const escaped = value
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t');
+  return literal(STRING, `'${escaped}'`);
 }
 
 export function variable(type: ApexType, name: string): ApexExpr {
@@ -155,4 +177,9 @@ export function methodCall(
   type: ApexType
 ): ApexExpr {
   return { node: 'methodCall', type, target, method, args };
+}
+
+/** `new Account()` / `new List<String>()`. */
+export function construct(type: ApexType, args: ApexExpr[]): ApexExpr {
+  return { node: 'construct', type, args };
 }
