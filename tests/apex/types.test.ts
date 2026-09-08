@@ -1,5 +1,5 @@
 import {
-  BOOLEAN, DATE, DATETIME, DECIMAL, ID, INTEGER, OBJECT, STRING,
+  BOOLEAN, DATE, DATETIME, DECIMAL, ID, INTEGER, OBJECT, STRING, isAssignable,
   isComparable, isUntyped, listOf, renderType, sobjectType,
 } from '../../src/apex/types.js';
 
@@ -55,5 +55,32 @@ describe('isUntyped', () => {
     expect(isUntyped(OBJECT)).toBe(true);
     expect(isUntyped(STRING)).toBe(false);
     expect(isUntyped(sobjectType())).toBe(false);
+  });
+});
+
+describe('isAssignable', () => {
+  it('matches SObject names case-insensitively, because Apex does', () => {
+    // `Account a = ...; account b = a;` compiles. The Flow XML supplies whatever
+    // the admin typed while a describe supplies canonical casing, so these differ
+    // in practice. Rejecting the pair would block a legitimate conversion.
+    expect(isAssignable(sobjectType('Account'), sobjectType('account'))).toBe(true);
+    expect(isAssignable(sobjectType('LLC_BI__Loan__c'), sobjectType('llc_bi__loan__c')))
+      .toBe(true);
+  });
+
+  it('assigns a List in either direction when the elements are related', () => {
+    // Verified against the compiler: Apex accepts List<Account> -> List<SObject>
+    // AND List<SObject> -> List<Account>, plus List<Integer> -> List<Decimal>.
+    expect(isAssignable(listOf(sobjectType('Account')), listOf(sobjectType()))).toBe(true);
+    expect(isAssignable(listOf(sobjectType()), listOf(sobjectType('Account')))).toBe(true);
+    expect(isAssignable(listOf(DECIMAL), listOf(INTEGER))).toBe(true);
+  });
+
+  it('refuses a List of unrelated elements', () => {
+    // These the compiler does reject.
+    expect(isAssignable(listOf(sobjectType('Contact')), listOf(sobjectType('Account'))))
+      .toBe(false);
+    expect(isAssignable(listOf(INTEGER), listOf(STRING))).toBe(false);
+    expect(isAssignable(listOf(BOOLEAN), listOf(STRING))).toBe(false);
   });
 });
