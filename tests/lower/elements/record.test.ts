@@ -1,7 +1,9 @@
 import { emitStmt } from '../../../src/apex/emit.js';
+import { ApexTypeError } from '../../../src/apex/errors.js';
 import { Scope } from '../../../src/apex/scope.js';
 import { FlowDeclaration, FlowIR, FlowNode } from '../../../src/ir/types.js';
-import { LowerContext } from '../../../src/lower/context.js';
+import { LowerContext, apexName } from '../../../src/lower/context.js';
+import { UnsupportedConstructError } from '../../../src/lower/value.js';
 import { declarationTypeSource } from '../../../src/lower/typeSource.js';
 import { lowerRecord } from '../../../src/lower/elements/record.js';
 
@@ -89,5 +91,50 @@ describe('lowerRecord', () => {
     const out = lowerRecord(node, ctx()).map((s) => emitStmt(s)).join('\n');
     expect(out).toContain('vUpdate');
     expect(out).not.toMatch(/\bUpdate =/);
+  });
+
+  it('refuses more than one filter rather than dropping one', () => {
+    // Two IN filters used to overwrite each other, silently widening the query
+    // to a near-full-object scan.
+    const node = lookup();
+    if (node.body?.kind === 'record') {
+      node.body.filters = [
+        { left: 'LLC_BI__Loan__c', operator: 'In', right: { kind: 'reference', raw: 'A' } },
+        { left: 'Status__c', operator: 'In', right: { kind: 'reference', raw: 'B' } },
+      ];
+    }
+    expect(() => lowerRecord(node, ctx())).toThrow(UnsupportedConstructError);
+  });
+
+  it('keeps the synthesized DML collection distinct from a real X_records element', () => {
+    const node: FlowNode = {
+      name: 'X', kind: 'recordcreates', connectors: [], sourceJson: '{}', raw: {},
+      object: 'Account',
+      body: {
+        kind: 'record', object: 'Account', filters: [],
+        inputAssignments: [], queriedFields: [], getFirstRecordOnly: false,
+        storeOutputAutomatically: false, outputAssignments: [],
+        assignNullValuesIfNoRecordsFound: false,
+      },
+    };
+    const c = ctx();
+    // A real Flow element named X_records claims that identifier first.
+    const reserved = apexName(c, 'X_records');
+    const out = lowerRecord(node, c).map((s) => emitStmt(s)).join('\n');
+    const match = out.match(/List<Account> (\w+) = new List<Account>\(\);/);
+    expect(match).not.toBeNull();
+    expect(match?.[1]).not.toBe(reserved);
+  });
+
+  it('refuses a lookup whose declared outputReference type does not match the query', () => {
+    const node = lookup();
+    if (node.body?.kind === 'record') {
+      node.body.outputReference = 'Found';
+    }
+    const c = ctx([{
+      name: 'Found', kind: 'variable', dataType: 'Boolean', isCollection: false,
+      isInput: false, isOutput: false, sourceJson: '{}',
+    }]);
+    expect(() => lowerRecord(node, c)).toThrow(ApexTypeError);
   });
 });

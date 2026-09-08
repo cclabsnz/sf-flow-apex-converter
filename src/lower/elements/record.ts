@@ -40,6 +40,16 @@ function lowerLookup(node: FlowNode, body: RecordBody, ctx: LowerContext): ApexS
   }
   if (body.limit !== undefined) spec.limit = body.limit;
 
+  // The builder models exactly one WHERE term (SoqlSpec.whereIn is singular).
+  // A second filter used to silently overwrite the first, widening the query
+  // to a near-full-object scan with no error and no note. Refuse instead.
+  if (body.filters.length > 1) {
+    throw new UnsupportedConstructError(
+      `${node.name} has ${body.filters.length} filters; this milestone's query builder ` +
+        `models a single WHERE term. Refusing rather than dropping one silently.`
+    );
+  }
+
   // Only an IN filter maps to a bind. Anything else needs a WHERE the builder
   // does not model yet, and is refused rather than dropped.
   for (const filter of body.filters) {
@@ -55,7 +65,14 @@ function lowerLookup(node: FlowNode, body: RecordBody, ctx: LowerContext): ApexS
   }
 
   const target = apexName(ctx, body.outputReference ?? node.name);
-  return [queryInto(listOf(sobjectType(object)), target, soql(spec))];
+  const declared = body.outputReference ? ctx.types.resolve(body.outputReference) : undefined;
+  // Use the Flow's own declared type when it has one, so queryInto's object check
+  // compares two independently-sourced facts instead of one fact with itself —
+  // deriving both sides from `object` made the mismatch check tautological.
+  const targetType = declared?.provenance === 'declared'
+    ? declared.type
+    : listOf(sobjectType(object));
+  return [queryInto(targetType, target, soql(spec))];
 }
 
 function lowerDml(node: FlowNode, body: RecordBody, ctx: LowerContext): ApexStmt[] {
@@ -66,7 +83,11 @@ function lowerDml(node: FlowNode, body: RecordBody, ctx: LowerContext): ApexStmt
   const operation = operationOf(node.kind) as 'insert' | 'update' | 'delete';
 
   const record = apexName(ctx, node.name);
-  const collection = apexName(ctx, `${node.name}_records`);
+  // Allocated outside the Flow-name cache: a real Flow element genuinely named
+  // `${node.name}_records` would otherwise resolve to the same identifier via
+  // apexName's cache, producing a duplicate declaration with different types.
+  // Scope.allocate guarantees uniqueness against every name already taken.
+  const collection = ctx.scope.allocate(`${record}_records`);
   const statements: ApexStmt[] = [
     declare(sobjectType(object), record, construct(sobjectType(object), [])),
     declare(listOf(sobjectType(object)), collection, construct(listOf(sobjectType(object)), [])),
