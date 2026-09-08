@@ -4,7 +4,7 @@ import { comparison, fieldRead, literal, methodCall, nullTest, variable } from '
 import { Scope } from '../../src/apex/scope.js';
 import { renderSoql, soql } from '../../src/apex/soql.js';
 import { collectInto, dmlBulk, fieldWrite } from '../../src/apex/stmt.js';
-import { DECIMAL, OBJECT, STRING } from '../../src/apex/types.js';
+import { BOOLEAN, DECIMAL, OBJECT, STRING } from '../../src/apex/types.js';
 
 /**
  * Every test here corresponds to Apex this project once generated and shipped.
@@ -28,7 +28,7 @@ describe('defects that are now unrepresentable', () => {
 
   test('DEFECT 2: contains has no infix form to abuse', () => {
     // Shipped as: a contains 'x'
-    const only = methodCall(variable(STRING, 'name'), 'contains', [literal(STRING, "'x'")], STRING);
+    const only = methodCall(variable(STRING, 'name'), 'contains', [literal(STRING, "'x'")], BOOLEAN);
     expect(emitExpr(only)).toBe("name.contains('x')");
 
     // The guarantee is a type-level one, so assert it at the type level. If

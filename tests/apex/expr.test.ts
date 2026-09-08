@@ -2,7 +2,7 @@ import { ApexTypeError } from '../../src/apex/errors.js';
 import {
   comparison, equality, fieldRead, literal, logical, methodCall, nullTest, variable,
 } from '../../src/apex/expr.js';
-import { BOOLEAN, DECIMAL, ID, OBJECT, STRING, sobjectType } from '../../src/apex/types.js';
+import { BOOLEAN, DATE, DECIMAL, ID, INTEGER, OBJECT, STRING, listOf, sobjectType } from '../../src/apex/types.js';
 
 describe('fieldRead', () => {
   it('carries the type it was told, never Object', () => {
@@ -89,5 +89,59 @@ describe('logical', () => {
 
   it('refuses an SObject operand', () => {
     expect(() => logical('||', [variable(sobjectType('Account'), 'a')])).toThrow(ApexTypeError);
+  });
+});
+
+describe('operand compatibility', () => {
+  it('refuses to order two types Apex cannot compare with each other', () => {
+    // Each side is individually orderable, so a per-operand check passes both.
+    // The org rejects the pair: "Comparison arguments must be compatible types".
+    expect(() => comparison(variable(STRING, 's'), '<', variable(DATE, 'd')))
+      .toThrow(ApexTypeError);
+    expect(() => comparison(variable(ID, 'a'), '<', variable(DECIMAL, 'n')))
+      .toThrow(ApexTypeError);
+  });
+
+  it('refuses to equate two unrelated types', () => {
+    expect(() => equality(variable(INTEGER, 'i'), '==', variable(sobjectType('Account'), 'a')))
+      .toThrow(ApexTypeError);
+    expect(() => equality(variable(BOOLEAN, 'b'), '==', variable(listOf(ID), 'ids')))
+      .toThrow(ApexTypeError);
+  });
+
+  it('still allows the compatible pairs Apex accepts', () => {
+    expect(() => comparison(variable(INTEGER, 'i'), '<', variable(DECIMAL, 'd'))).not.toThrow();
+    expect(() => comparison(variable(ID, 'a'), '<', variable(STRING, 's'))).not.toThrow();
+    expect(() => equality(variable(STRING, 's'), '==', variable(ID, 'a'))).not.toThrow();
+  });
+});
+
+describe('logical arity', () => {
+  it('refuses an empty operand list', () => {
+    // Joining nothing produced `if () { ... }`, which is a syntax error.
+    expect(() => logical('&&', [])).toThrow(ApexTypeError);
+  });
+
+  it('accepts a single operand', () => {
+    expect(() => logical('&&', [variable(BOOLEAN, 'b')])).not.toThrow();
+  });
+});
+
+describe('literal', () => {
+  it('refuses text that is not a single atom', () => {
+    // literal text is spliced in verbatim and never parenthesised, so a compound
+    // expression here re-parses and defeats the precedence guarantee entirely:
+    // logical('&&', [literal(BOOLEAN, 'a || b'), c]) emitted `a || b && c`.
+    expect(() => literal(BOOLEAN, 'a || b')).toThrow(ApexTypeError);
+    expect(() => literal(DECIMAL, '1 + 2')).toThrow(ApexTypeError);
+  });
+
+  it('accepts the atoms a converter actually produces', () => {
+    expect(() => literal(DECIMAL, '1000')).not.toThrow();
+    expect(() => literal(DECIMAL, '-2.5')).not.toThrow();
+    expect(() => literal(STRING, "'Funded'")).not.toThrow();
+    expect(() => literal(STRING, "'it\\'s'")).not.toThrow();
+    expect(() => literal(BOOLEAN, 'true')).not.toThrow();
+    expect(() => literal(ID, 'null')).not.toThrow();
   });
 });
