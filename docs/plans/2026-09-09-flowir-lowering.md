@@ -1610,7 +1610,7 @@ export function lowerValue(value: FlowValue, ctx: LowerContext): ApexExpr {
 - [ ] **Step 4: Run to verify they pass**
 
 Run: `npx jest tests/lower/value.test.ts`
-Expected: PASS (12 tests).
+Expected: PASS (13 tests).
 
 - [ ] **Step 5: Commit**
 
