@@ -931,7 +931,9 @@ export function checkStructure(cfg: Cfg): StructureReport {
   }
 
   for (const name of cfg.order) {
-    if (!live.has(name)) problems.push(`${name} is unreachable from the Flow's start element.`);
+    // Wording matters: the test asserts /unreachable.*Orphan/i, so the word
+    // comes before the name.
+    if (!live.has(name)) problems.push(`Unreachable from the Flow's start element: ${name}.`);
   }
 
   // Every cycle must be closed by a loop element. A back-edge to anything else
