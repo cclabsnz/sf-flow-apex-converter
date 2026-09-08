@@ -1366,7 +1366,7 @@ export function declarationTypeSource(ir: FlowIR): TypeSource {
 - [ ] **Step 5: Run to verify they pass**
 
 Run: `npx jest tests/lower/typeSource.test.ts`
-Expected: PASS (11 tests).
+Expected: PASS (10 tests).
 
 - [ ] **Step 6: Commit**
 
