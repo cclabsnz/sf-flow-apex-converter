@@ -99,6 +99,20 @@ describe('immediatePostDominator', () => {
     const cfg = buildCfg(ir([decision('D', 'A', 'J'), plain('A', 'J'), plain('J')], 'D'));
     expect(immediatePostDominator(cfg, 'D')).not.toBe('A');
   });
+
+  it('picks the nearest join when several nodes post-dominate', () => {
+    // pdom(D) = {D, J, K}: both J and K are candidates, and only the selection
+    // rule distinguishes them. Without this, swapping .every for .some in
+    // immediatePostDominator passes every other test in this file.
+    const cfg = buildCfg(ir([
+      decision('D', 'A', 'B'),
+      plain('A', 'J'),
+      plain('B', 'J'),
+      plain('J', 'K'),
+      plain('K'),
+    ], 'D'));
+    expect(immediatePostDominator(cfg, 'D')).toBe('J');
+  });
 });
 
 describe('checkStructure', () => {

@@ -94,7 +94,8 @@ export function reachable(cfg: Cfg): Set<string> {
  * test cases — which matters more here than speed.
  */
 export function postDominators(cfg: Cfg): Map<string, Set<string>> {
-  const names = cfg.order.filter((n) => reachable(cfg).has(n));
+  const live = reachable(cfg);
+  const names = cfg.order.filter((n) => live.has(n));
   const all = new Set(names);
   const exits = names.filter((n) => cfg.successors(n).length === 0);
 
