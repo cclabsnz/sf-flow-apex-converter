@@ -1846,7 +1846,10 @@ export function parseConditionLogic(logic: string, count: number): LogicNode {
   if (simple === 'and' || simple === 'or') {
     const children: LogicNode[] = [];
     for (let i = 0; i < count; i += 1) children.push({ kind: 'index', index: i });
-    return { kind: simple, children };
+    // A single condition collapses to the bare index, as the custom-expression
+    // parser below also does. Wrapping one operand in a logical node makes the
+    // emitter parenthesise it — `(A == true)` instead of `A == true`.
+    return count === 1 ? children[0] : { kind: simple, children };
   }
 
   const tokens = logic.match(/\d+|AND|OR|\(|\)/gi) ?? [];
@@ -1979,7 +1982,7 @@ private to this module.
 - [ ] **Step 4: Run to verify they pass**
 
 Run: `npx jest tests/lower/condition.test.ts`
-Expected: PASS (18 tests). `STRING` may be reported as unused — remove it from
+Expected: PASS (17 tests). `STRING` may be reported as unused — remove it from
 the import if so.
 
 - [ ] **Step 5: Commit**
