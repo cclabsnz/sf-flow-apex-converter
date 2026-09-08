@@ -86,6 +86,7 @@ literal, unescaped quotes become live.
 - Consumes: `literal`, `ApexExpr`, `ApexTypeError`, `ApexStmt` (all existing)
 - Produces:
   - `stringLiteral(value: string): ApexExpr` in `src/apex/expr.ts`
+  - `construct(type: ApexType, args: ApexExpr[]): ApexExpr` in `src/apex/expr.ts`; `ApexExpr` gains `| { node: 'construct'; type: ApexType; args: ApexExpr[] }`
   - `memberWrite(target: string, member: string, value: ApexExpr): ApexStmt` in `src/apex/stmt.ts`
   - `ApexStmt` gains `| { stmt: 'memberWrite'; target: string; member: string; value: ApexExpr }`
 
@@ -165,7 +166,63 @@ Add `STRING` to the existing `./types.js` import in `src/apex/expr.ts`.
 Run: `npx jest tests/apex/expr.test.ts -t stringLiteral`
 Expected: PASS (5 tests).
 
-- [ ] **Step 5: Write the failing tests for `memberWrite`**
+- [ ] **Step 5: Write the failing test for `construct`**
+
+Lowering a record create emits `new Account()`, and a collection needs
+`new List<Account>()`. `literal()` refuses both — its atom guard rejects
+compound text, which is the guard working as designed. Add the node.
+
+Add to `tests/apex/expr.test.ts`:
+
+```typescript
+describe('construct', () => {
+  it('constructs an SObject', () => {
+    expect(emitExpr(construct(sobjectType('Account'), []))).toBe('new Account()');
+  });
+
+  it('constructs a typed list', () => {
+    expect(emitExpr(construct(listOf(sobjectType('Account')), [])))
+      .toBe('new List<Account>()');
+  });
+
+  it('is assignable to its own declared type', () => {
+    // declare() validates assignability, so this must satisfy isAssignable.
+    expect(() => declare(sobjectType('Account'), 'a', construct(sobjectType('Account'), [])))
+      .not.toThrow();
+  });
+});
+```
+
+Add `construct` to the expr import, `emitExpr` from `../../src/apex/emit.js`,
+`declare` from `../../src/apex/stmt.js`, and `listOf`/`sobjectType` from
+`../../src/apex/types.js`.
+
+Run it, watch it fail, then in `src/apex/expr.ts` add to the union:
+
+```typescript
+  | { node: 'construct'; type: ApexType; args: ApexExpr[] }
+```
+
+and the constructor:
+
+```typescript
+/** `new Account()` / `new List<String>()`. */
+export function construct(type: ApexType, args: ApexExpr[]): ApexExpr {
+  return { node: 'construct', type, args };
+}
+```
+
+In `src/apex/emit.ts` add to `emitExpr` — the switch is exhaustive, so
+TypeScript will require it:
+
+```typescript
+    case 'construct':
+      return `new ${renderType(e.type)}(${e.args.map(emitExpr).join(', ')})`;
+```
+
+Run: `npx jest tests/apex` — expect PASS.
+
+- [ ] **Step 6: Write the failing tests for `memberWrite`**
 
 Add to `tests/apex/stmt.test.ts`:
 
@@ -198,12 +255,12 @@ describe('memberWrite', () => {
 Add `memberWrite` to the `../../src/apex/stmt.js` import and `emitStmt` from
 `../../src/apex/emit.js` in that file.
 
-- [ ] **Step 6: Run to verify they fail**
+- [ ] **Step 7: Run to verify they fail**
 
 Run: `npx jest tests/apex/stmt.test.ts -t memberWrite`
 Expected: FAIL — `memberWrite is not a function`.
 
-- [ ] **Step 7: Implement `memberWrite`**
+- [ ] **Step 8: Implement `memberWrite`**
 
 In `src/apex/stmt.ts`, add to the `ApexStmt` union after `fieldWrite`:
 
@@ -248,21 +305,24 @@ In `src/apex/emit.ts`, add the case to `emitStmt`'s switch, after `fieldWrite`:
       return `${pad}${s.target}.${s.member} = ${emitExpr(s.value)};`;
 ```
 
-- [ ] **Step 8: Run the whole apex suite**
+- [ ] **Step 9: Run the whole apex suite**
 
 Run: `npx jest tests/apex`
 Expected: PASS. The `emitStmt` switch is exhaustive with no `default`, so
 TypeScript would have failed the build if the new case were missing.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
 git add src/apex/expr.ts src/apex/stmt.ts src/apex/emit.ts tests/apex/expr.test.ts tests/apex/stmt.test.ts
-git commit -m "feat(apex): add stringLiteral escaping and memberWrite
+git commit -m "feat(apex): add stringLiteral escaping, construct and memberWrite
 
 Both were deferred at the end of Milestone 2b as having no caller. Lowering
 is that caller: the moment a Flow value becomes a literal, an unescaped
 apostrophe ends its own literal and emits a syntax error.
+
+construct() covers `new Account()`, which literal() refuses because its
+atom guard rejects compound text — the guard working as designed.
 
 memberWrite exists because fieldWrite emits record.put(), which is
 SObject-only, and passing a dotted name to assign() would smuggle an
@@ -800,7 +860,7 @@ export function postDominators(cfg: Cfg): Map<string, Set<string>> {
   const exits = names.filter((n) => cfg.successors(n).length === 0);
 
   const pdom = new Map<string, Set<string>>();
-  for (const n of names) pdom.set(n, n in exits ? new Set([n]) : new Set(all));
+  for (const n of names) pdom.set(n, exits.includes(n) ? new Set([n]) : new Set(all));
   for (const e of exits) pdom.set(e, new Set([e]));
 
   let changed = true;
@@ -898,28 +958,11 @@ export function checkStructure(cfg: Cfg): StructureReport {
   };
   if (cfg.entry && cfg.node(cfg.entry)) walk(cfg.entry);
 
-  for (const name of cfg.order) {
-    const n = cfg.node(name);
-    if (!live.has(name) || n?.body?.kind !== 'decision') continue;
-    const branches = cfg.successors(name).filter((e) => e.kind === 'rule' || e.kind === 'default');
-    if (branches.length < 2) continue;
-    if (immediatePostDominator(cfg, name) === undefined) {
-      const terminal = branches.every((e) => {
-        const seen = new Set<string>();
-        const stack = [e.to];
-        while (stack.length > 0) {
-          const cur = stack.pop() as string;
-          if (seen.has(cur)) continue;
-          seen.add(cur);
-          for (const nx of cfg.successors(cur)) stack.push(nx.to);
-        }
-        return true;
-      });
-      if (!terminal) {
-        problems.push(`${name} has no join: its branches never reconverge.`);
-      }
-    }
-  }
+  // A decision whose branches never reconverge is NOT a refusal. Each branch
+  // simply runs to the end of the Flow, which lowerFrom handles with an
+  // undefined stop node. The refusals above — a back-edge to something that is
+  // not a loop, an unreachable node, an edge to a node that does not exist —
+  // are the shapes that genuinely cannot be rebuilt as structured Apex.
 
   return { ok: problems.length === 0, problems };
 }
@@ -2156,7 +2199,7 @@ Expected: FAIL — cannot find module `src/lower/elements/record.js`.
 ```typescript
 import { ApexStmt, collectInto, declare, dmlBulk, fieldWrite, queryInto } from '../../apex/stmt.js';
 import { SoqlSpec, soql } from '../../apex/soql.js';
-import { literal, variable } from '../../apex/expr.js';
+import { construct } from '../../apex/expr.js';
 import { listOf, sobjectType } from '../../apex/types.js';
 import { FlowNode, RecordBody } from '../../ir/types.js';
 import { LowerContext, apexName } from '../context.js';
@@ -2224,8 +2267,8 @@ function lowerDml(node: FlowNode, body: RecordBody, ctx: LowerContext): ApexStmt
   const record = apexName(ctx, node.name);
   const collection = apexName(ctx, `${node.name}_records`);
   const statements: ApexStmt[] = [
-    declare(sobjectType(object), record, literal(sobjectType(object), 'null')),
-    declare(listOf(sobjectType(object)), collection, null),
+    declare(sobjectType(object), record, construct(sobjectType(object), [])),
+    declare(listOf(sobjectType(object)), collection, construct(listOf(sobjectType(object)), [])),
   ];
 
   for (const write of body.inputAssignments) {
@@ -2258,9 +2301,9 @@ export function lowerRecord(node: FlowNode, ctx: LowerContext): ApexStmt[] {
 - [ ] **Step 8: Run to verify they pass**
 
 Run: `npx jest tests/lower`
-Expected: PASS. If `declare` rejects the `new Account()` initialiser, use
-`literal(sobjectType(object), 'null')` as written above and let a later
-assignment populate it — `isAssignable` accepts a same-kind SObject.
+Expected: PASS. Both the record and its collection are constructed rather
+than declared null — `record.put(...)` on a null record is a runtime NPE, and
+so is adding to a null list.
 
 - [ ] **Step 9: Commit**
 
@@ -3546,24 +3589,14 @@ describe('lowerFlow', () => {
 });
 ```
 
-- [ ] **Step 2: Add object construction and return to the AST**
+- [ ] **Step 2: Add a return statement to the AST**
 
-Output declarations become fields on a returned `Result` class, which needs
-`new Result()` and `return result;`. Neither exists, and `literal()` will refuse
-`'new Result()'` because its atom guard rejects compound text — that guard doing
-its job is the signal to add real nodes.
+Output declarations become fields on a returned `Result` class. `construct()`
+already exists from Task 1; the return statement does not.
 
-Add to `tests/apex/expr.test.ts` and `tests/apex/stmt.test.ts`:
+Add to `tests/apex/stmt.test.ts`:
 
 ```typescript
-it('constructs an object', () => {
-  expect(emitExpr(construct(sobjectType('Result'), []))).toBe('new Result()');
-});
-
-it('constructs with arguments', () => {
-  expect(emitExpr(construct(listOf(STRING), []))).toBe('new List<String>()');
-});
-
 it('emits a return with a value', () => {
   expect(emitStmt(returnStmt(variable(STRING, 'result')))).toBe('return result;');
 });
@@ -3571,19 +3604,6 @@ it('emits a return with a value', () => {
 it('emits a bare return', () => {
   expect(emitStmt(returnStmt(null))).toBe('return;');
 });
-```
-
-In `src/apex/expr.ts`:
-
-```typescript
-  | { node: 'construct'; type: ApexType; args: ApexExpr[] }
-```
-
-```typescript
-/** `new Account()` / `new List<String>()`. */
-export function construct(type: ApexType, args: ApexExpr[]): ApexExpr {
-  return { node: 'construct', type, args };
-}
 ```
 
 In `src/apex/stmt.ts`:
@@ -3599,11 +3619,6 @@ export function returnStmt(value: ApexExpr | null): ApexStmt {
 ```
 
 In `src/apex/emit.ts`:
-
-```typescript
-    case 'construct':
-      return `new ${renderType(e.type)}(${e.args.map(emitExpr).join(', ')})`;
-```
 
 ```typescript
     case 'returnStmt':
