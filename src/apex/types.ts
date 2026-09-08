@@ -67,6 +67,12 @@ export function isUntyped(type: ApexType): boolean {
   return type.kind === 'Object';
 }
 
+
+/** Apex identifiers and object names are case-insensitive; comparisons must be too. */
+export function sameName(a: string | undefined, b: string | undefined): boolean {
+  return a?.toLowerCase() === b?.toLowerCase();
+}
+
 /**
  * True when Apex will assign a value of `source` to a slot of `target`.
  *
@@ -83,11 +89,19 @@ export function isAssignable(target: ApexType, source: ApexType): boolean {
   if (target.kind === 'Object') return true;
   if (source.kind === 'Object') return false;
   if (target.kind === 'List' && source.kind === 'List') {
-    return isAssignable(target.of, source.of);
+    // Related in EITHER direction. Verified against the compiler, which is more
+    // permissive than Java here: List<Account> -> List<SObject> assigns, and so
+    // does List<SObject> -> List<Account>, as does List<Integer> -> List<Decimal>.
+    // Only unrelated elements are refused (List<Account> -> List<Contact>).
+    return isAssignable(target.of, source.of) || isAssignable(source.of, target.of);
   }
   if (target.kind === 'SObject' && source.kind === 'SObject') {
-    // The abstract SObject accepts any concrete one; a concrete one accepts only itself.
-    return target.name === undefined || target.name === source.name;
+    // The abstract SObject accepts any concrete one; a concrete one accepts only
+    // itself, compared case-insensitively because Apex is: `Account a; account b = a;`
+    // compiles. The two names reaching here come from different places — Flow XML
+    // as the admin typed it, and a describe in canonical casing — so they differ
+    // in practice, and a case-sensitive match would reject a valid conversion.
+    return target.name === undefined || sameName(target.name, source.name);
   }
   if (target.kind === source.kind) return true;
   const widenings: ReadonlyArray<readonly [string, string]> = [
