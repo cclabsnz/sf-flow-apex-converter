@@ -17,6 +17,8 @@ export interface Manifest {
   guesses: string[];
   stubs: string[];
   dependencies: string[];
+  /** Flow behaviour the generated code does not reproduce exactly. */
+  notes: string[];
   unsupported: string[];
   /**
    * For a record-triggered Flow, the line to add to the org's existing trigger.
@@ -167,6 +169,7 @@ export function lowerFlow(ir: FlowIR): LoweredFlow {
   const guesses = dedupe(ctx.notes.filter((n) => n.kind === 'guess').map((n) => n.detail));
   const stubs = dedupe(ctx.notes.filter((n) => n.kind === 'stub').map((n) => n.detail));
   const dependencies = dedupe(ctx.notes.filter((n) => n.kind === 'dependency').map((n) => n.detail));
+  const notes = dedupe(ctx.notes.filter((n) => n.kind === 'note').map((n) => n.detail));
   const unsupported = ir.unsupported.map((u) => `${u.kind} ${u.name ?? ''}: ${u.reason}`.trim());
 
   const doc = [
@@ -188,6 +191,10 @@ export function lowerFlow(ir: FlowIR): LoweredFlow {
     doc.push('', 'Requires separately converted Flows:');
     for (const d of dependencies) doc.push(`  - ${d}`);
   }
+  if (notes.length > 0) {
+    doc.push('', 'Flow behaviour NOT reproduced exactly:');
+    for (const n of notes) doc.push(`  - ${n}`);
+  }
 
   const execute: ApexMethod = {
     visibility: 'public', isStatic: true, returnType, name: 'execute',
@@ -207,7 +214,7 @@ export function lowerFlow(ir: FlowIR): LoweredFlow {
     apexClass,
     source: emitClass(apexClass),
     manifest: {
-      flowName: ir.flowName, className, guesses, stubs, dependencies, unsupported,
+      flowName: ir.flowName, className, guesses, stubs, dependencies, notes, unsupported,
       delegation: ir.start?.object
         ? `${className}.execute(Trigger.new);  // add to the existing ${ir.start.object} trigger`
         : undefined,

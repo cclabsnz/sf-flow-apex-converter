@@ -19,7 +19,13 @@ export interface TypeSource {
 }
 
 export interface LoweringNote {
-  kind: 'guess' | 'stub' | 'dependency';
+  /**
+   * 'note' is the fourth kind, for Flow behaviour the generated code does not
+   * reproduce exactly but which is too narrow to refuse over. It reaches the
+   * manifest and the class header alongside the other three, so a modelled Flow
+   * fact is never read and then dropped in silence.
+   */
+  kind: 'guess' | 'stub' | 'dependency' | 'note';
   detail: string;
 }
 
