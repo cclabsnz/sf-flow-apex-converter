@@ -41,6 +41,21 @@ export function lowerReference(reference: string, ctx: LowerContext): ApexExpr {
   const formula = ctx.formulas.get(reference);
   if (formula) return formula;
 
+  // A dotted path is split on the FIRST dot, so `{!CaseVar.Contact.Email}` used
+  // to emit ((String)CaseVar.get('Contact.Email')). That COMPILES and throws
+  // System.SObjectException at run time, which the acceptance gate cannot see —
+  // and the class header listed it as a guessed TYPE, implying the field is real.
+  // Lowering it needs the relationship's target object, which no describe is
+  // available to supply in this milestone. Checked before resolve(), so a
+  // reference that is refused leaves no type guess behind claiming otherwise.
+  if (reference.split('.').length > 2) {
+    throw new UnsupportedConstructError(
+      `Reference '${reference}' traverses a relationship, which this milestone does not ` +
+        `lower. Resolving the related object needs a describe; a single get() with a dotted ` +
+        `field name compiles and throws at run time instead.`
+    );
+  }
+
   const resolved = ctx.types.resolve(reference);
   if (resolved.provenance === 'heuristic') {
     ctx.notes.push({ kind: 'guess', detail: resolved.note });

@@ -124,3 +124,44 @@ describe('declarationTypeSource', () => {
     expect(declarationTypeSource(ir([])).resolve('Mystery').provenance).toBe('heuristic');
   });
 });
+
+describe('declarationTypeSource on an undotted loop element name', () => {
+  const loopNode: FlowNode = {
+    name: 'Loop_over_Loans', kind: 'loops', connectors: [], sourceJson: '{}', raw: {},
+    body: { kind: 'loop', collection: 'LoansInPP', bodyTarget: 'X' },
+  };
+  const loans = decl({
+    name: 'LoansInPP', dataType: 'SObject', objectType: 'LLC_BI__Loan__c', isCollection: true,
+  });
+
+  it('resolves the bare loop name to the collection element type', () => {
+    // The loops map was consulted only inside objectOf — the DOTTED path — so a
+    // bare resolve('Loop_over_Loans') fell through to "not declared; assumed
+    // String". lowerAssignment's `kind === 'SObject'` check therefore never
+    // fired for a loop variable, and a field write's guessed type never reached
+    // the class header.
+    const resolved = declarationTypeSource(ir([loans], [loopNode])).resolve('Loop_over_Loans');
+    expect(resolved.type).toEqual(sobjectType('LLC_BI__Loan__c'));
+    expect(resolved.provenance).toBe('declared');
+  });
+
+  it('folds case, as Flow and Apex both do', () => {
+    expect(declarationTypeSource(ir([loans], [loopNode])).resolve('loop_over_loans').type)
+      .toEqual(sobjectType('LLC_BI__Loan__c'));
+  });
+
+  it('lets a real declaration of the same name win', () => {
+    const shadow = decl({ name: 'Loop_over_Loans', dataType: 'Boolean' });
+    expect(declarationTypeSource(ir([loans, shadow], [loopNode])).resolve('Loop_over_Loans').type)
+      .toEqual(BOOLEAN);
+  });
+
+  it('still guesses when the loop iterates something undeclared', () => {
+    const orphan: FlowNode = {
+      ...loopNode,
+      body: { kind: 'loop', collection: 'Nowhere', bodyTarget: 'X' },
+    };
+    const resolved = declarationTypeSource(ir([], [orphan])).resolve('Loop_over_Loans');
+    expect(resolved.provenance).toBe('heuristic');
+  });
+});

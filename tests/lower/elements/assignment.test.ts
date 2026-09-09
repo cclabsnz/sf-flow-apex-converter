@@ -13,9 +13,9 @@ function decl(name: string, dataType: string, isCollection = false, objectType?:
   };
 }
 
-function ctx(declarations: FlowDeclaration[]): LowerContext {
+function ctx(declarations: FlowDeclaration[], nodes: FlowNode[] = []): LowerContext {
   const ir: FlowIR = {
-    flowName: 'T', processType: 'AutoLaunchedFlow', declarations, nodes: [], unsupported: [],
+    flowName: 'T', processType: 'AutoLaunchedFlow', declarations, nodes, unsupported: [],
   };
   return {
     ir, types: declarationTypeSource(ir), scope: new Scope(),
@@ -117,5 +117,37 @@ describe('lowerAssignment', () => {
       { target: 'B', operator: 'Assign', value: { kind: 'reference', raw: 'S' } },
     ]);
     expect(lowerAssignment(node, c).map((s) => emitStmt(s))).toEqual(['A = S;', 'B = S;']);
+  });
+});
+
+describe('lowerAssignment writing a field onto a loop variable', () => {
+  it('flags the guessed field type in the header', () => {
+    // The write goes through memberWrite, which the real compiler checks against
+    // the real schema — but the guessed TYPE must still be reported, exactly as
+    // a read of the same field would be. It was not, because resolve() did not
+    // know loop element names on the undotted path, so the SObject check that
+    // gates the note never fired.
+    const loopNode: FlowNode = {
+      name: 'Loop_over_Loans', kind: 'loops', connectors: [], sourceJson: '{}', raw: {},
+      body: { kind: 'loop', collection: 'LoansInPP', bodyTarget: 'X' },
+    };
+    const c = ctx([{
+      name: 'LoansInPP', kind: 'variable', dataType: 'SObject', objectType: 'LLC_BI__Loan__c',
+      isCollection: true, isInput: false, isOutput: false, sourceJson: '{}',
+    }], [loopNode]);
+    const node: FlowNode = {
+      name: 'Set_Status', kind: 'assignments', connectors: [], sourceJson: '{}', raw: {},
+      body: {
+        kind: 'assignment',
+        items: [{
+          target: 'Loop_over_Loans.Servicing_Status__c', operator: 'Assign',
+          value: { kind: 'string', raw: 'Reviewed' },
+        }],
+      },
+    };
+    const out = lowerAssignment(node, c).map((s) => emitStmt(s)).join('\n');
+    expect(out).toBe("Loop_over_Loans.Servicing_Status__c = 'Reviewed';");
+    const guesses = c.notes.filter((n) => n.kind === 'guess').map((n) => n.detail).join(' ');
+    expect(guesses).toContain('Servicing_Status__c');
   });
 });

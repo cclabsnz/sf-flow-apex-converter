@@ -163,6 +163,35 @@ describe('lowerFlow', () => {
     expect(lowerFlow(ir).manifest.delegation).toContain('Account');
   });
 
+  it('matches the delegation line to the signature execute actually has', () => {
+    // A record-triggered Flow declares no isInput variables, so the generated
+    // signature is `execute()`. The manifest told the developer to paste
+    // `X.execute(Trigger.new);`, which is a compile error — "Method does not
+    // exist or incorrect signature".
+    const ir = flow({
+      flowName: 'Account_Rules',
+      start: { triggerKind: 'RecordAfterSave', object: 'Account', sourceJson: '{}' },
+    });
+    const { manifest, apexClass } = lowerFlow(ir);
+    expect(apexClass.methods.find((m) => m.name === 'execute')?.params).toEqual([]);
+    expect(manifest.delegation).toContain('Account_Rules.execute();');
+    expect(manifest.delegation).not.toContain('Trigger.new');
+  });
+
+  it('names the parameters the delegation must supply when execute takes some', () => {
+    const ir = flow({
+      flowName: 'Account_Rules',
+      declarations: [{
+        name: 'Accts', kind: 'variable', dataType: 'SObject', objectType: 'Account',
+        isCollection: true, isInput: true, isOutput: false, sourceJson: '{}',
+      }],
+      start: { triggerKind: 'RecordAfterSave', object: 'Account', sourceJson: '{}' },
+    });
+    const { manifest } = lowerFlow(ir);
+    expect(manifest.delegation).toContain('Account_Rules.execute(Accts);');
+    expect(manifest.delegation).toContain('List<Account> Accts');
+  });
+
   it('carries the IR unsupported list into the manifest', () => {
     const ir = flow({
       unsupported: [{ kind: 'screens', name: 'Ask', reason: 'no Apex equivalent', sourceJson: '{}' }],

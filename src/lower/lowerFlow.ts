@@ -2,7 +2,7 @@ import { ApexClass, ApexField, ApexMethod, ApexParam, emitClass } from '../apex/
 import { Scope } from '../apex/scope.js';
 import { construct, variable } from '../apex/expr.js';
 import { ApexStmt, declare, memberWrite, returnStmt } from '../apex/stmt.js';
-import { ApexType, sobjectType } from '../apex/types.js';
+import { ApexType, renderType, sobjectType } from '../apex/types.js';
 import { FlowDeclaration, FlowIR } from '../ir/types.js';
 import { buildCfg, checkStructure } from './cfg.js';
 import { LowerContext, LoweringRefusal, apexName } from './context.js';
@@ -53,6 +53,30 @@ function sharingOf(runInMode: string | undefined): ApexClass['sharing'] {
  */
 function dedupe(values: string[]): string[] {
   return [...new Set(values)];
+}
+
+/**
+ * The one line to paste into the org's existing trigger.
+ *
+ * It must match the signature `execute` actually has. That signature comes from
+ * the Flow's isInput declarations, and a record-triggered Flow has none — so the
+ * old fixed `${className}.execute(Trigger.new);` was a compile error ("Method
+ * does not exist or incorrect signature") for exactly the Flows this line is for.
+ *
+ * When there ARE parameters the call names them and the comment says what to
+ * declare: the converter cannot know what the trigger should pass, and inventing
+ * `Trigger.new` for an arbitrary parameter list would be the same mistake again.
+ */
+function delegationFor(className: string, object: string, params: ApexParam[]): string {
+  const call = `${className}.execute(${params.map((p) => p.name).join(', ')});`;
+  if (params.length === 0) {
+    return `${call}  // add to the existing ${object} trigger`;
+  }
+  const signature = params.map((p) => `${renderType(p.type)} ${p.name}`).join(', ');
+  return (
+    `${call}  // add to the existing ${object} trigger; supply ${signature} ` +
+    `from the trigger context`
+  );
 }
 
 export function lowerFlow(ir: FlowIR): LoweredFlow {
@@ -215,9 +239,7 @@ export function lowerFlow(ir: FlowIR): LoweredFlow {
     source: emitClass(apexClass),
     manifest: {
       flowName: ir.flowName, className, guesses, stubs, dependencies, notes, unsupported,
-      delegation: ir.start?.object
-        ? `${className}.execute(Trigger.new);  // add to the existing ${ir.start.object} trigger`
-        : undefined,
+      delegation: ir.start?.object ? delegationFor(className, ir.start.object, params) : undefined,
     },
   };
 }

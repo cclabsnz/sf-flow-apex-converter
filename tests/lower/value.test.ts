@@ -5,7 +5,7 @@ import { FlowIR } from '../../src/ir/types.js';
 import { LowerContext } from '../../src/lower/context.js';
 import { declarationTypeSource } from '../../src/lower/typeSource.js';
 import { literal } from '../../src/apex/expr.js';
-import { UnsupportedConstructError, lowerValue } from '../../src/lower/value.js';
+import { UnsupportedConstructError, lowerReference, lowerValue } from '../../src/lower/value.js';
 
 const literalTrue = () => literal(BOOLEAN, 'true');
 
@@ -117,5 +117,44 @@ describe('lowerValue', () => {
   it('refuses a value kind with no mapping', () => {
     expect(() => lowerValue({ kind: 'setupReference', raw: 'x' }, ctx()))
       .toThrow(UnsupportedConstructError);
+  });
+});
+
+
+describe('lowerReference and relationship traversal', () => {
+  it('refuses a reference with more than one dot', () => {
+    // `{!CaseVar.Contact.Email}` emitted ((String)CaseVar.get('Contact.Email')),
+    // which COMPILES and throws System.SObjectException at run time — the
+    // acceptance gate cannot see it. Worse, the header listed it as a guessed
+    // TYPE, implying the field is real.
+    const c = ctx({ declarations: [{
+      name: 'CaseVar', kind: 'variable', dataType: 'SObject', objectType: 'Case',
+      isCollection: false, isInput: false, isOutput: false, sourceJson: '{}',
+    }] });
+    expect(() => lowerReference('CaseVar.Contact.Email', c))
+      .toThrow(UnsupportedConstructError);
+    expect(() => lowerReference('CaseVar.Contact.Email', c))
+      .toThrow(/CaseVar\.Contact\.Email/);
+    expect(() => lowerReference('CaseVar.Contact.Email', c))
+      .toThrow(/relationship/i);
+  });
+
+  it('records no guess for a reference it refuses', () => {
+    // The note would otherwise claim a type for a field that was never read.
+    const c = ctx({ declarations: [{
+      name: 'CaseVar', kind: 'variable', dataType: 'SObject', objectType: 'Case',
+      isCollection: false, isInput: false, isOutput: false, sourceJson: '{}',
+    }] });
+    expect(() => lowerReference('CaseVar.Contact.Email', c)).toThrow();
+    expect(c.notes).toEqual([]);
+  });
+
+  it('still lowers a single-dot field read', () => {
+    const c = ctx({ declarations: [{
+      name: 'CaseVar', kind: 'variable', dataType: 'SObject', objectType: 'Case',
+      isCollection: false, isInput: false, isOutput: false, sourceJson: '{}',
+    }] });
+    expect(emitExpr(lowerReference('CaseVar.Subject', c)))
+      .toBe("((String)CaseVar.get('Subject'))");
   });
 });
