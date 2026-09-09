@@ -234,3 +234,46 @@ describe('lowerFrom', () => {
     expect(iR3).toBeLessThan(iDef);
   });
 });
+
+describe('lowerFrom and element-owned names that are also Flow declarations', () => {
+  function loopWithVariable(name: string, bodyTarget: string, iterationVariable: string): FlowNode {
+    return node(name, {
+      kind: 'loops',
+      connectors: [{ target: bodyTarget, isFault: false }],
+      body: { kind: 'loop', collection: 'items', bodyTarget, iterationVariable },
+    });
+  }
+
+  const accounts = (name: string, isCollection: boolean): FlowDeclaration => ({
+    name, kind: 'variable', dataType: 'SObject', objectType: 'Account',
+    isCollection, isInput: false, isOutput: false, sourceJson: '{}',
+  });
+
+  it('iterates a separate identifier and copies into a declared loop variable', () => {
+    // The Flow declares `Item` itself, so lowerFlow gives it a top-level
+    // declaration. Declaring it again in the for-each header is "Variable
+    // already defined"; declaring it ONLY there puts it out of scope for
+    // anything after the loop.
+    const flow = ir([
+      loopWithVariable('L', 'B', 'Item'),
+      assignNode('B', 'L', 'x'),
+    ], 'L');
+    flow.declarations = [accounts('items', true), accounts('Item', false), decl('x')];
+    const out = lowerFrom(buildCfg(flow), 'L', undefined, makeCtx(flow))
+      .map((s) => emitStmt(s)).join('\n');
+    expect(out).not.toContain('for (Account Item : items)');
+    expect(out).toMatch(/for \(Account (\w+) : items\) \{\n\s+Item = \1;/);
+  });
+
+  it('declares an element-internal loop variable in the for-each header', () => {
+    // Nothing else declares this name, so the loop owns it outright.
+    const flow = ir([
+      loopWithVariable('L', 'B', 'Item'),
+      assignNode('B', 'L', 'x'),
+    ], 'L');
+    flow.declarations = [accounts('items', true), decl('x')];
+    const out = lowerFrom(buildCfg(flow), 'L', undefined, makeCtx(flow))
+      .map((s) => emitStmt(s)).join('\n');
+    expect(out).toContain('for (Account Item : items)');
+  });
+});

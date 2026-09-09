@@ -1,9 +1,10 @@
 import { ApexTypeError } from '../apex/errors.js';
-import { ApexStmt, forEach, ifThen, tryCatch } from '../apex/stmt.js';
+import { ApexStmt, assign, forEach, ifThen, tryCatch } from '../apex/stmt.js';
+import { variable } from '../apex/expr.js';
 import { sobjectType } from '../apex/types.js';
 import { FlowNode } from '../ir/types.js';
 import { Cfg, immediatePostDominator } from './cfg.js';
-import { LowerContext, LoweringRefusal, apexName } from './context.js';
+import { LowerContext, LoweringRefusal, apexName, isFlowDeclared } from './context.js';
 import { lowerConditions } from './condition.js';
 import { lowerAssignment } from './elements/assignment.js';
 import { lowerCollectionProcessor } from './elements/collectionProcessor.js';
@@ -118,13 +119,22 @@ export function lowerFrom(
       const collection = node.body.collection;
       const collectionType = ctx.types.resolve(collection).type;
       const elementType = collectionType.kind === 'List' ? collectionType.of : sobjectType();
-      const item = apexName(ctx, node.body.iterationVariable ?? node.name);
-      out.push(forEach(
-        elementType,
-        item,
-        apexName(ctx, collection),
-        lowerFrom(cfg, node.body.bodyTarget, current, ctx)
-      ));
+      const iterationVariable = node.body.iterationVariable ?? node.name;
+      const item = apexName(ctx, iterationVariable);
+      // A for-each header always DECLARES its iteration variable. When the Flow
+      // declares that name too (see isFlowDeclared), lowerFlow has already
+      // emitted its top-level declaration — declaring it again here is "Variable
+      // already defined", and declaring it ONLY here block-scopes it, so a loop
+      // inside a decision branch leaves every later reference out of scope. The
+      // loop then iterates a separate, Scope-allocated identifier and copies
+      // each item into the declared name.
+      const declaredItem = isFlowDeclared(ctx, iterationVariable);
+      const cursor = declaredItem ? ctx.scope.allocate(`${item}_item`) : item;
+      const copy: ApexStmt[] = declaredItem
+        ? [assign(item, variable(elementType, cursor))]
+        : [];
+      const body = lowerFrom(cfg, node.body.bodyTarget, current, ctx);
+      out.push(forEach(elementType, cursor, apexName(ctx, collection), [...copy, ...body]));
       current = node.body.afterTarget;
       continue;
     }

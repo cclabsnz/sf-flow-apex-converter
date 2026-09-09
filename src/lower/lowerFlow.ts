@@ -89,35 +89,16 @@ export function lowerFlow(ir: FlowIR): LoweredFlow {
   const locals: ApexStmt[] = [];
   const outputs: { declaration: FlowDeclaration; type: ApexType; name: string }[] = [];
 
-  // Some elements declare their own local as part of lowering, and Flow Builder
-  // still lists that same name in <variables> (or as a formula's implicit
-  // dependency), so it also appears in ir.declarations:
-  //   - a record lookup emits its own `List<T> name = [...]` for its
-  //     outputReference (see lowerLookup in elements/record.ts);
-  //   - a collection processor's `for (T item : ...)` declares its
-  //     assignNextValueToReference (see lowerCollectionProcessor);
-  //   - a loop's `for (T item : ...)` declares its iterationVariable
-  //     (see lowerFrom in walk.ts).
-  // Pre-declaring the same name again below produces "Duplicate variable" —
-  // confirmed by the real compiler, not just a guess about Apex scoping —
-  // and the class will not deploy. Those names are the element's to declare,
-  // not lowerFlow's.
-  const declaredByElement = new Set(
-    ir.nodes
-      .flatMap((n): string[] => {
-        if (n.kind === 'recordlookups' && n.body?.kind === 'record') {
-          return n.body.outputReference ? [n.body.outputReference] : [];
-        }
-        if (n.body?.kind === 'collectionProcessor') {
-          return n.body.assignNextValueToReference ? [n.body.assignNextValueToReference] : [];
-        }
-        if (n.body?.kind === 'loop') {
-          return n.body.iterationVariable ? [n.body.iterationVariable] : [];
-        }
-        return [];
-      })
-      .map((name) => name.toLowerCase())
-  );
+  // Some elements also write to a name the Flow itself declares: a record
+  // lookup's outputReference, a collection processor's output and iteration
+  // variable, a loop's iteration variable. Those names get their ONE declaration
+  // here, at the method's top level, and the element assigns into it — see
+  // isFlowDeclared in context.ts. Letting the element declare it instead was
+  // only correct while every such element sat at the top level; inside an `if`
+  // or a `for` the declaration is scoped to that block and every later
+  // reference, the Result assembly included, is "Variable does not exist"
+  // (compiler-confirmed). Only element-internal names — those absent from
+  // ir.declarations — declare in place.
 
   for (const d of ir.declarations) {
     const type = flowTypeToApex(d.dataType, d.objectType, d.isCollection, d.apexClass);
@@ -138,26 +119,18 @@ export function lowerFlow(ir: FlowIR): LoweredFlow {
       continue;
     }
     if (d.isInput) {
-      // A Get Records element would redeclare the parameter under the same
-      // name, which Apex also rejects. Refuse rather than emit either
-      // ordering of a class that cannot compile.
-      if (declaredByElement.has(d.name.toLowerCase())) {
-        throw new LoweringRefusal([
-          `'${d.name}' is both an input parameter and a Get Records outputReference; ` +
-            'the generated element would redeclare the parameter, which Apex rejects.',
-        ]);
-      }
+      // A parameter is already a declaration of the name. An element that also
+      // writes to it assigns rather than declares (isFlowDeclared covers both),
+      // and Apex parameters are not final, so this needs no special case.
       params.push({ type, name });
       continue;
     }
     if (d.isOutput) outputs.push({ declaration: d, type, name });
-    if (!declaredByElement.has(d.name.toLowerCase())) {
-      // A collection left null-initialised NPEs on its first .add() inside a
-      // loop or an AddItem assignment — one of the most common Flow shapes
-      // there is. A scalar stays null: pre-constructing an SObject local
-      // would mask "no record found", which is meaningful Flow behaviour.
-      locals.push(declare(type, name, d.isCollection ? construct(type, []) : null));
-    }
+    // A collection left null-initialised NPEs on its first .add() inside a
+    // loop or an AddItem assignment — one of the most common Flow shapes
+    // there is. A scalar stays null: pre-constructing an SObject local
+    // would mask "no record found", which is meaningful Flow behaviour.
+    locals.push(declare(type, name, d.isCollection ? construct(type, []) : null));
   }
 
   const body: ApexStmt[] = [...locals, ...lowerFrom(cfg, cfg.entry, undefined, ctx)];

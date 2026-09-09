@@ -56,10 +56,18 @@ describe('lowerCollectionProcessor', () => {
     const out = lowerCollectionProcessor(node, c).map((s) => emitStmt(s)).join('\n');
     // The declaration must construct the list. A null list that is then .add()ed to
     // compiles and throws NullPointerException on the first matching row.
+    //
+    // 'CurrentLoan' is a Flow declaration here, so lowerFlow declares it at the
+    // method's top level and the for-each iterates a separate identifier,
+    // copying each item across: a for-each header always DECLARES, which would
+    // be "Variable already defined" against the top-level declaration, and
+    // declaring it only in the header would block-scope it (see isFlowDeclared).
+    // 'Filter_Loans' is NOT a Flow declaration here, so it still declares in place.
     expect(out).toBe(
       [
         'List<Loan__c> Filter_Loans = new List<Loan__c>();',
-        'for (Loan__c CurrentLoan : Loans) {',
+        'for (Loan__c CurrentLoan_item : Loans) {',
+        '    CurrentLoan = CurrentLoan_item;',
         "    if (((Decimal)CurrentLoan.get('Amount__c')) > 1000) {",
         '        Filter_Loans.add(CurrentLoan);',
         '    }',
