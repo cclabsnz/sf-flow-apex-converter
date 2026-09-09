@@ -43,10 +43,14 @@ export interface ApexClass {
   inner: ApexClass[];
 }
 
+// A doc line carries Flow-authored text. An embedded */ would close the comment
+// early and turn the rest of the class into unparseable source.
+const escapeDocLine = (line: string): string => line.replace(/\*\//g, '*\\/');
+
 /** An ApexDoc block at `pad`, or nothing when there is no documentation. */
 function doc(lines: string[], pad: string): string {
   if (lines.length === 0) return '';
-  const body = lines.map((l) => `${pad} * ${l}`).join('\n');
+  const body = lines.map((l) => `${pad} * ${escapeDocLine(l)}`).join('\n');
   return `${pad}/**\n${body}\n${pad} */\n`;
 }
 

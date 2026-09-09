@@ -92,6 +92,16 @@ describe('emitClass', () => {
     expect(out).toContain('    /**\n     * TODO: formula not translated.\n     */');
   });
 
+  it('escapes an embedded */ in a doc line so the comment cannot close early', () => {
+    // A doc line carries Flow-authored text (a formula expression, an action's
+    // input values). An embedded */ would close the comment early and turn the
+    // rest of the class into unparseable source.
+    const out = emitClass(emptyClass({ doc: ["Flow expression: a*/b"] }));
+    expect((out.match(/\/\*\*/g) ?? []).length).toBe(1);
+    expect((out.match(/\*\//g) ?? []).length).toBe(1);
+    expect(out).toContain('a*\\/b');
+  });
+
   it('emits an inner class indented inside its parent', () => {
     const out = emitClass(emptyClass({
       inner: [{

@@ -5,6 +5,7 @@ import { FlowDeclaration, FlowIR, FlowNode } from '../../../src/ir/types.js';
 import { LowerContext } from '../../../src/lower/context.js';
 import { declarationTypeSource } from '../../../src/lower/typeSource.js';
 import { lowerAction, lowerFormula, lowerSubflow } from '../../../src/lower/elements/stubs.js';
+import { UnsupportedConstructError } from '../../../src/lower/value.js';
 
 function ctx(declarations: FlowDeclaration[] = []): LowerContext {
   const ir: FlowIR = {
@@ -64,19 +65,85 @@ describe('lowerFormula', () => {
     lowerFormula(c.ir.declarations[0], c);
     expect(c.stubs.size).toBe(1);
   });
+
+  it('emits a well-formed doc block for an expression containing */', () => {
+    // A formula's text literal can contain '*/', which would close an ApexDoc
+    // comment early and make the rest of the class unparseable. The method
+    // body's throw message legitimately contains the same raw text inside an
+    // Apex string literal — that occurrence is not a defect, so the check below
+    // isolates the doc block itself (a non-greedy match stops at the FIRST `*/`,
+    // which would land mid-expression if the doc line were not escaped).
+    const c = ctx([formula('isCA', "OR({!A.X__c}, 'a*/b')")]);
+    lowerFormula(c.ir.declarations[0], c);
+    const method = [...c.stubs.values()][0];
+    const cls = emitClass({
+      name: 'T', sharing: 'with sharing', doc: [], fields: [], inner: [], methods: [method],
+    });
+    const [docBlock] = cls.match(/\/\*\*[\s\S]*?\*\//) ?? [''];
+    expect(docBlock).toContain('a*\\/b');
+    expect(docBlock).toContain('Flow expression:');
+    expect(cls).toContain('private static Boolean formula_isCA()');
+  });
+
+  it('translates a bare global permission reference exactly, with no stub', () => {
+    // {!$Permission.CanApprove} is fully translated by lowerReference already;
+    // BARE_REFERENCE must not exclude the leading $ and send it to a stub.
+    const c = ctx([formula('canApprove', '{!$Permission.CanApprove}')]);
+    const expr = lowerFormula(c.ir.declarations[0], c);
+    expect(c.stubs.size).toBe(0);
+    expect(emitStmt({ stmt: 'invoke', call: expr } as never)).toBe(
+      "FeatureManagement.checkPermission('CanApprove');"
+    );
+  });
 });
 
 describe('lowerSubflow', () => {
+  const subflowNode = (name: string, flowName: string): FlowNode => ({
+    name, kind: 'subflows', connectors: [], sourceJson: '{}', raw: {},
+    body: { kind: 'subflow', flowName, inputs: [], outputs: [],
+      storeOutputAutomatically: true },
+  });
+
   it('calls the subflow class and records a dependency', () => {
-    const node: FlowNode = {
-      name: 'Validate', kind: 'subflows', connectors: [], sourceJson: '{}', raw: {},
-      body: { kind: 'subflow', flowName: 'NC_Validate_Dates', inputs: [], outputs: [],
-        storeOutputAutomatically: true },
-    };
+    const node = subflowNode('Validate', 'NC_Validate_Dates');
     const c = ctx();
     const out = lowerSubflow(node, c).map((s) => emitStmt(s)).join('\n');
     expect(out).toContain('NC_Validate_Dates');
     expect(c.notes.filter((n) => n.kind === 'dependency')).toHaveLength(1);
+  });
+
+  it('emits the identical class name for two calls to the same subflow', () => {
+    // A subflow names a class this converter does not generate, so it cannot be
+    // renamed on collision the way a local can. A prior bug ran the name through
+    // Scope, so a second reference to NC_Validate emitted NC_Validate2 — a class
+    // that does not exist, or worse, a different one that does.
+    const c = ctx();
+    const first = lowerSubflow(subflowNode('Before', 'NC_Validate'), c)
+      .map((s) => emitStmt(s)).join('\n');
+    const second = lowerSubflow(subflowNode('After', 'NC_Validate'), c)
+      .map((s) => emitStmt(s)).join('\n');
+    expect(first).toBe('NC_Validate.execute();');
+    expect(second).toBe('NC_Validate.execute();');
+  });
+
+  it('emits the subflow name verbatim even when it collides with an allocated local', () => {
+    const c = ctx();
+    c.scope.allocate('NC_Validate');
+    const out = lowerSubflow(subflowNode('Validate', 'NC_Validate'), c)
+      .map((s) => emitStmt(s)).join('\n');
+    expect(out).toBe('NC_Validate.execute();');
+  });
+
+  it('refuses a subflow name that is an Apex reserved word', () => {
+    const c = ctx();
+    expect(() => lowerSubflow(subflowNode('Validate', 'List'), c))
+      .toThrow(UnsupportedConstructError);
+  });
+
+  it('refuses a subflow name that is not a valid Apex identifier', () => {
+    const c = ctx();
+    expect(() => lowerSubflow(subflowNode('Validate', '2Bad'), c))
+      .toThrow(UnsupportedConstructError);
   });
 });
 

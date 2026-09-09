@@ -1,5 +1,6 @@
 import { ApexMethod } from '../../apex/class.js';
 import { ApexExpr, methodCall, staticCall, variable } from '../../apex/expr.js';
+import { RESERVED } from '../../apex/scope.js';
 import { ApexStmt, invoke, throwStmt } from '../../apex/stmt.js';
 import { ApexType, BOOLEAN, sobjectType } from '../../apex/types.js';
 import { FlowDeclaration, FlowNode } from '../../ir/types.js';
@@ -7,8 +8,16 @@ import { LowerContext, apexName } from '../context.js';
 import { UnsupportedConstructError, lowerReference } from '../value.js';
 import { flowTypeToApex } from '../typeSource.js';
 
-/** `{!Some.Reference}` and nothing else — no functions, no operators. */
-const BARE_REFERENCE = /^\{!([A-Za-z_][A-Za-z0-9_.$]*)\}$/;
+/**
+ * `{!Some.Reference}` and nothing else — no functions, no operators.
+ *
+ * The leading `$?` admits a global reference such as `{!$Permission.CanApprove}`,
+ * which lowerReference already translates exactly — excluding it would send a
+ * common, fully-translatable pattern to a stub for no reason.
+ */
+const BARE_REFERENCE = /^\{!(\$?[A-Za-z_][A-Za-z0-9_.$]*)\}$/;
+
+const APEX_IDENTIFIER = /^[A-Za-z][A-Za-z0-9_]*$/;
 
 /**
  * A private method that compiles and throws.
@@ -78,11 +87,23 @@ export function lowerSubflow(node: FlowNode, ctx: LowerContext): ApexStmt[] {
   if (body?.kind !== 'subflow') {
     throw new UnsupportedConstructError(`${node.name} has no subflow body.`);
   }
+
+  // A subflow names a class this converter does not generate, so it cannot be
+  // renamed on collision the way a local can. Running it through Scope turned a
+  // second reference to NC_Validate into NC_Validate2 — a class that does not
+  // exist, or worse, a different one that does.
+  if (!APEX_IDENTIFIER.test(body.flowName) || RESERVED.has(body.flowName.toLowerCase())) {
+    throw new UnsupportedConstructError(
+      `Subflow '${body.flowName}' is not a name an Apex class can have, and a class ` +
+        `reference cannot be renamed the way a local variable can.`
+    );
+  }
+
   ctx.notes.push({
     kind: 'dependency',
     detail: `subflow ${body.flowName} must be converted separately`,
   });
-  const target = ctx.scope.allocate(body.flowName);
+  const target = body.flowName;
   return [invoke(methodCall(
     variable(sobjectType(target), target), 'execute', [], BOOLEAN
   ))];
