@@ -140,13 +140,33 @@ export function lowerFrom(
     }
 
     const own = lowerElement(node, ctx);
+    const success = cfg.successors(current).find((e) => e.kind === 'next')?.to;
     const fault = faultTarget(node);
     if (fault) {
-      out.push(tryCatch(own, 'e', lowerFrom(cfg, fault, stopAt, ctx)));
-    } else {
-      out.push(...own);
+      // A fault path that REJOINS the success path is the common shape: both
+      // reach some element C and carry on together. Lowering the fault path with
+      // the enclosing stopAt, and leaving the success path outside the try,
+      // emitted C inside the catch AND again after it — so on the fault path C
+      // ran twice and the fault handler's own assignments were overwritten.
+      //
+      // The correct shape is `try { A; B; } catch (Exception e) { F; } C;` where
+      // C is the join of the two paths. The fault edge is in the CFG, so
+      // immediatePostDominator sees both and returns exactly that join; it is
+      // undefined when the paths never reconverge, which walks each to the end
+      // inside its own arm. The join can never be past `stopAt`: if stopAt
+      // post-dominates this node then the NEAREST post-dominator is at or before
+      // it, so the branch cannot outrun its enclosing stop.
+      const join = immediatePostDominator(cfg, current);
+      out.push(tryCatch(
+        [...own, ...lowerFrom(cfg, success, join, ctx)],
+        'e',
+        lowerFrom(cfg, fault, join, ctx)
+      ));
+      current = join;
+      continue;
     }
-    current = cfg.successors(current).find((e) => e.kind === 'next')?.to;
+    out.push(...own);
+    current = success;
   }
 
   return out;
