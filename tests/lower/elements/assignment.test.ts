@@ -78,6 +78,24 @@ describe('lowerAssignment', () => {
     expect(() => lowerAssignment(node, c)).toThrow(/RemoveAfterFirst/);
   });
 
+  it('refuses RemoveAll on a non-collection, rather than emitting a call Apex cannot compile', () => {
+    // Without this guard, .clear() would be emitted on a scalar target — a
+    // compile error in the generated Apex with no refusal from the converter.
+    const c = ctx([decl('Total', 'Number')]);
+    const node = assignmentNode([{ target: 'Total', operator: 'RemoveAll', value: { kind: 'none' } }]);
+    expect(() => lowerAssignment(node, c)).toThrow(UnsupportedConstructError);
+  });
+
+  it('reports an undeclared Add target as undeclared, not as needing arithmetic', () => {
+    // declarationTypeSource falls back to a String guess for a name the Flow
+    // never declares, so isCollection would say "false" for the same reason
+    // it would for a real scalar. The two causes need different messages.
+    const c = ctx([decl('Msg', 'Apex')]);
+    const node = assignmentNode([{ target: 'Ghost', operator: 'Add', value: { kind: 'reference', raw: 'Msg' } }]);
+    expect(() => lowerAssignment(node, c)).toThrow(/does not declare/);
+    expect(() => lowerAssignment(node, c)).not.toThrow(/arithmetic/);
+  });
+
   it('emits one statement per item, in order', () => {
     const c = ctx([decl('A', 'String'), decl('B', 'String'), decl('S', 'String')]);
     const node = assignmentNode([
