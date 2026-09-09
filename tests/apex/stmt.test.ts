@@ -2,7 +2,7 @@ import { ApexTypeError } from '../../src/apex/errors.js';
 import { comparison, literal, methodCall, variable } from '../../src/apex/expr.js';
 import { soql } from '../../src/apex/soql.js';
 import {
-  assign, declare, ifThen, invoke, memberWrite, queryInto, throwStmt, tryCatch,
+  assign, declare, ifThen, invoke, memberWrite, queryInto, returnStmt, throwStmt, tryCatch,
 } from '../../src/apex/stmt.js';
 import { emitStmt } from '../../src/apex/emit.js';
 import {
@@ -172,5 +172,15 @@ describe('throwStmt', () => {
   it('emits a throw with an escaped message', () => {
     expect(emitStmt(throwStmt("Formula isn't translated")))
       .toBe("throw new UnsupportedOperationException('Formula isn\\'t translated');");
+  });
+});
+
+describe('returnStmt', () => {
+  it('emits a return with a value', () => {
+    expect(emitStmt(returnStmt(variable(STRING, 'result')))).toBe('return result;');
+  });
+
+  it('emits a bare return', () => {
+    expect(emitStmt(returnStmt(null))).toBe('return;');
   });
 });

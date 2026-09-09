@@ -124,5 +124,7 @@ export function emitStmt(s: ApexStmt, depth = 0): string {
     }
     case 'throwStmt':
       return `${pad}throw new UnsupportedOperationException(${emitExpr(s.message)});`;
+    case 'returnStmt':
+      return s.value === null ? `${pad}return;` : `${pad}return ${emitExpr(s.value)};`;
   }
 }

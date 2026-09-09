@@ -17,7 +17,8 @@ export type ApexStmt =
   | { stmt: 'memberWrite'; target: string; member: string; value: ApexExpr }
   | { stmt: 'invoke'; call: ApexExpr }
   | { stmt: 'throwStmt'; message: ApexExpr }
-  | { stmt: 'tryCatch'; body: ApexStmt[]; exceptionName: string; handler: ApexStmt[] };
+  | { stmt: 'tryCatch'; body: ApexStmt[]; exceptionName: string; handler: ApexStmt[] }
+  | { stmt: 'returnStmt'; value: ApexExpr | null };
 
 export function declare(type: ApexType, name: string, init: ApexExpr | null): ApexStmt {
   if (init !== null && !isAssignable(type, init.type)) {
@@ -162,4 +163,14 @@ export function throwStmt(message: string): ApexStmt {
 export function tryCatch(body: ApexStmt[], exceptionName: string, handler: ApexStmt[]): ApexStmt {
   requireIdentifier(exceptionName, 'An exception variable');
   return { stmt: 'tryCatch', body, exceptionName, handler };
+}
+
+/**
+ * `return value;` / `return;` — the latter for a void method.
+ *
+ * Output declarations become fields on a returned inner Result class, which is
+ * why this exists: nothing before this task ever needed to return a value.
+ */
+export function returnStmt(value: ApexExpr | null): ApexStmt {
+  return { stmt: 'returnStmt', value };
 }
