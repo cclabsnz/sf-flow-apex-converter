@@ -172,3 +172,65 @@ describe('checkStructure', () => {
     expect(report.problems.join(' ')).toContain('Missing');
   });
 });
+
+describe('checkStructure and unconnected decision outcomes', () => {
+  /** A decision whose single rule has no connector at all. */
+  function ruleUnconnected(name: string, defaultTarget: string): FlowNode {
+    return node(name, {
+      kind: 'decisions',
+      connectors: [{ target: defaultTarget, isFault: false }],
+      body: {
+        kind: 'decision',
+        rules: [{ name: 'Matched', label: 'Matched', conditionLogic: 'and', conditions: [] }],
+        defaultTarget,
+      },
+    });
+  }
+
+  /** A decision whose default outcome has no connector at all. */
+  function defaultUnconnected(name: string, ruleTarget: string): FlowNode {
+    return node(name, {
+      kind: 'decisions',
+      connectors: [{ target: ruleTarget, isFault: false }],
+      body: {
+        kind: 'decision',
+        rules: [{ name: 'Matched', conditionLogic: 'and', conditions: [], target: ruleTarget }],
+        defaultLabel: 'Otherwise',
+      },
+    });
+  }
+
+  it('refuses a decision whose rule outcome has no connector', () => {
+    // In Flow an outcome with no connector means the interview ENDS on that
+    // path. edgesFor emits no edge for it, so the decision looks
+    // single-successor, its branch lowers to nothing, and the OTHER branch's
+    // statements run on both paths — output that compiles and is wrong.
+    const cfg = buildCfg(ir([ruleUnconnected('D', 'F'), plain('F')], 'D'));
+    const report = checkStructure(cfg);
+    expect(report.ok).toBe(false);
+    expect(report.problems.join(' ')).toContain('D');
+    expect(report.problems.join(' ')).toContain('Matched');
+  });
+
+  it('refuses a decision whose default outcome has no connector', () => {
+    const cfg = buildCfg(ir([defaultUnconnected('D', 'T'), plain('T')], 'D'));
+    const report = checkStructure(cfg);
+    expect(report.ok).toBe(false);
+    expect(report.problems.join(' ')).toMatch(/default/i);
+    expect(report.problems.join(' ')).toContain('D');
+  });
+
+  it('does not refuse an unreachable decision with an unconnected outcome', () => {
+    // An unreachable node is already reported once, by its own rule. Adding a
+    // second problem for a branch that never executes is noise.
+    const cfg = buildCfg(ir([plain('A'), ruleUnconnected('D', 'F'), plain('F')], 'A'));
+    const problems = checkStructure(cfg).problems.filter((p) => /outcome/i.test(p));
+    expect(problems).toEqual([]);
+  });
+
+  it('accepts a decision whose every outcome is connected', () => {
+    const cfg = buildCfg(ir(
+      [decision('D', 'A', 'B'), plain('A', 'J'), plain('B', 'J'), plain('J')], 'D'));
+    expect(checkStructure(cfg).ok).toBe(true);
+  });
+});

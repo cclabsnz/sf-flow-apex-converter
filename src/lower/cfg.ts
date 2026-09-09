@@ -227,9 +227,39 @@ export function checkStructure(cfg: Cfg): StructureReport {
 
   // A decision whose branches never reconverge is NOT a refusal. Each branch
   // simply runs to the end of the Flow, which lowerFrom handles with an
-  // undefined stop node. The refusals above — a back-edge to something that is
-  // not a loop, an unreachable node, an edge to a node that does not exist —
-  // are the shapes that genuinely cannot be rebuilt as structured Apex.
+  // undefined stop node.
+  //
+  // An outcome with NO CONNECTOR AT ALL is a different shape, and it is refused.
+  // An outcome with no connector means the Flow ENDS on that path. It produces no
+  // edge, so the decision looks single-successor, the branch lowers to nothing, and
+  // the other branch's statements run on both paths — compiling, and wrong.
+  //
+  // Lowering it faithfully needs an early return that interacts with the Result
+  // assembly, which is a later milestone. Refusing is honest and cheap. Only
+  // reachable decisions are checked: an unreachable one is already reported by
+  // its own rule above, and a second problem for a branch that never executes
+  // is noise.
+  for (const name of cfg.order) {
+    if (!live.has(name)) continue;
+    const body = cfg.node(name)?.body;
+    if (body?.kind !== 'decision') continue;
+    for (const rule of body.rules) {
+      if (rule.target === undefined) {
+        problems.push(
+          `Decision ${name}: outcome '${rule.label ?? rule.name}' has no connector, which in ` +
+            `Flow means the interview ends on that path. This milestone cannot lower an early ` +
+            `end; connect the outcome, or wait for early-return lowering.`
+        );
+      }
+    }
+    if (body.defaultTarget === undefined) {
+      problems.push(
+        `Decision ${name}: the default outcome ('${body.defaultLabel ?? 'Default Outcome'}') has ` +
+          `no connector, which in Flow means the interview ends on that path. This milestone ` +
+          `cannot lower an early end; connect the outcome, or wait for early-return lowering.`
+      );
+    }
+  }
 
   return { ok: problems.length === 0, problems };
 }
