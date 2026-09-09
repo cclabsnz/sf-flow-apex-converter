@@ -3,7 +3,7 @@ import { Scope } from '../apex/scope.js';
 import { construct, variable } from '../apex/expr.js';
 import { ApexStmt, declare, memberWrite, returnStmt } from '../apex/stmt.js';
 import { ApexType, sobjectType } from '../apex/types.js';
-import { FlowDeclaration, FlowIR } from '../ir/types.js';
+import { FlowDeclaration, FlowIR, RecordBody } from '../ir/types.js';
 import { buildCfg, checkStructure } from './cfg.js';
 import { LowerContext, LoweringRefusal, apexName } from './context.js';
 import { lowerFormula } from './elements/stubs.js';
@@ -75,6 +75,18 @@ export function lowerFlow(ir: FlowIR): LoweredFlow {
   const locals: ApexStmt[] = [];
   const outputs: { declaration: FlowDeclaration; type: ApexType; name: string }[] = [];
 
+  // A record lookup emits its own `List<T> name = [...]` (see lowerLookup in
+  // elements/record.ts), so pre-declaring the same name below produces
+  // "Variable already defined" and the class will not deploy. Those names are
+  // the element's to declare, not lowerFlow's.
+  const declaredByElement = new Set(
+    ir.nodes
+      .filter((n) => n.kind === 'recordlookups' && n.body?.kind === 'record')
+      .map((n) => (n.body as RecordBody).outputReference)
+      .filter((name): name is string => name !== undefined)
+      .map((name) => name.toLowerCase())
+  );
+
   for (const d of ir.declarations) {
     const type = flowTypeToApex(d.dataType, d.objectType, d.isCollection);
     const name = apexName(ctx, d.name);
@@ -94,11 +106,26 @@ export function lowerFlow(ir: FlowIR): LoweredFlow {
       continue;
     }
     if (d.isInput) {
+      // A Get Records element would redeclare the parameter under the same
+      // name, which Apex also rejects. Refuse rather than emit either
+      // ordering of a class that cannot compile.
+      if (declaredByElement.has(d.name.toLowerCase())) {
+        throw new LoweringRefusal([
+          `'${d.name}' is both an input parameter and a Get Records outputReference; ` +
+            'the generated element would redeclare the parameter, which Apex rejects.',
+        ]);
+      }
       params.push({ type, name });
       continue;
     }
     if (d.isOutput) outputs.push({ declaration: d, type, name });
-    locals.push(declare(type, name, null));
+    if (!declaredByElement.has(d.name.toLowerCase())) {
+      // A collection left null-initialised NPEs on its first .add() inside a
+      // loop or an AddItem assignment — one of the most common Flow shapes
+      // there is. A scalar stays null: pre-constructing an SObject local
+      // would mask "no record found", which is meaningful Flow behaviour.
+      locals.push(declare(type, name, d.isCollection ? construct(type, []) : null));
+    }
   }
 
   const body: ApexStmt[] = [...locals, ...lowerFrom(cfg, cfg.entry, undefined, ctx)];
