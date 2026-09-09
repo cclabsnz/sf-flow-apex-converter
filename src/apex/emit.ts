@@ -1,5 +1,5 @@
 import { ApexExpr } from './expr.js';
-import { renderSoql } from './soql.js';
+import { SoqlQuery, renderSoql } from './soql.js';
 import { ApexStmt } from './stmt.js';
 import { renderType } from './types.js';
 
@@ -78,6 +78,15 @@ export function emitExpr(e: ApexExpr): string {
   }
 }
 
+/** `[\n  SELECT ...\n];` — the shared tail of queryInto and queryAssign. */
+function query(spec: SoqlQuery, pad: string): string {
+  const body = renderSoql(spec)
+    .split('\n')
+    .map((line) => `${pad}${INDENT}${line}`)
+    .join('\n');
+  return `[\n${body}\n${pad}];`;
+}
+
 function block(body: ApexStmt[], depth: number): string {
   return body.map((s) => emitStmt(s, depth)).join('\n');
 }
@@ -109,11 +118,10 @@ export function emitStmt(s: ApexStmt, depth = 0): string {
     case 'invoke':
       return `${pad}${emitExpr(s.call)};`;
     case 'queryInto': {
-      const q = renderSoql(s.query)
-        .split('\n')
-        .map((line) => `${pad}${INDENT}${line}`)
-        .join('\n');
-      return `${pad}${renderType(s.type)} ${s.name} = [\n${q}\n${pad}];`;
+      return `${pad}${renderType(s.type)} ${s.name} = ${query(s.query, pad)}`;
+    }
+    case 'queryAssign': {
+      return `${pad}${s.name} = ${query(s.query, pad)}`;
     }
     case 'ifThen':
       return (

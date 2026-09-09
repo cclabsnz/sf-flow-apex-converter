@@ -2,7 +2,8 @@ import { ApexTypeError } from '../../src/apex/errors.js';
 import { comparison, literal, methodCall, variable } from '../../src/apex/expr.js';
 import { soql } from '../../src/apex/soql.js';
 import {
-  assign, declare, ifThen, invoke, memberWrite, queryInto, returnStmt, throwStmt, tryCatch,
+  assign, declare, ifThen, invoke, memberWrite, queryAssign, queryInto, returnStmt, throwStmt,
+  tryCatch,
 } from '../../src/apex/stmt.js';
 import { emitStmt } from '../../src/apex/emit.js';
 import {
@@ -182,5 +183,39 @@ describe('returnStmt', () => {
 
   it('emits a bare return', () => {
     expect(emitStmt(returnStmt(null))).toBe('return;');
+  });
+});
+
+
+describe('queryAssign', () => {
+  const accountQuery = soql({ object: 'Account', fields: ['Id', 'Name'] });
+
+  it('assigns a query into an already-declared variable', () => {
+    // The assigning form exists so a name that is BOTH a Flow declaration and
+    // element-owned can be declared once at the method's top level and written
+    // to wherever the element sits — including inside an if or a for, where a
+    // declaration would be scoped to that block and invisible afterwards.
+    const emitted = emitStmt(queryAssign('accts', accountQuery));
+    expect(emitted.startsWith('accts = [')).toBe(true);
+    expect(emitted).toContain('SELECT Id, Name');
+    expect(emitted).toContain('FROM Account');
+    expect(emitted.trimEnd().endsWith('];')).toBe(true);
+  });
+
+  it('emits no type, unlike queryInto', () => {
+    expect(emitStmt(queryAssign('accts', accountQuery))).not.toContain('List<');
+  });
+
+  it('guards the target name the same way its neighbours do', () => {
+    expect(() => queryAssign('a.b', accountQuery)).toThrow(ApexTypeError);
+    expect(() => queryAssign('2bad', accountQuery)).toThrow(ApexTypeError);
+    expect(() => queryAssign('', accountQuery)).toThrow(ApexTypeError);
+  });
+
+  it('indents the query body like queryInto does', () => {
+    const lines = emitStmt(queryAssign('accts', accountQuery), 1).split('\n');
+    expect(lines[0]).toBe('    accts = [');
+    expect(lines.some((l) => /^ {8}SELECT /.test(l))).toBe(true);
+    expect(lines[lines.length - 1]).toBe('    ];');
   });
 });

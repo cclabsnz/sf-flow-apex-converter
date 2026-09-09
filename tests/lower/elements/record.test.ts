@@ -143,8 +143,10 @@ describe('lowerRecord', () => {
     }]);
     const out = lowerRecord(node, c).map((s) => emitStmt(s)).join('\n');
     expect(out).not.toMatch(/List<[^>]+> Found =/);
-    expect(out).toContain('LLC_BI__Pricing_Stream__c Found = ');
     expect(out).toMatch(/List<LLC_BI__Pricing_Stream__c> \w+ = \[/);
+    // 'Found' is a Flow declaration, so lowerFlow declares it at the method's
+    // top level and the element assigns into it (see isFlowDeclared).
+    expect(out).not.toMatch(/^LLC_BI__Pricing_Stream__c Found/m);
     // Flow's semantics: no record found leaves the variable null. `[...][0]`
     // would throw on an empty result instead.
     expect(out).toMatch(/Found = \w+\.isEmpty\(\) \? null : \w+\.get\(0\);/);

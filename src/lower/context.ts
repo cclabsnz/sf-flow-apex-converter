@@ -55,6 +55,26 @@ export interface LowerContext {
 }
 
 /**
+ * Whether the Flow itself declares this name.
+ *
+ * The pivot for who owns a declaration. A name that is BOTH a Flow declaration
+ * and element-owned gets its one top-level declaration in lowerFlow, and the
+ * element ASSIGNS into it; only element-internal names — those the Flow never
+ * declares — declare in place. Declaring in place is correct only for an element
+ * at the METHOD's top level: inside an `if` or a `for` the declaration is scoped
+ * to that block, and every later reference, the Result assembly included, is
+ * "Variable does not exist". Inverting the rule removes the dependence on
+ * knowing whether the element is nested.
+ *
+ * Case-insensitive: Flow and Apex both treat identifiers that way.
+ */
+export function isFlowDeclared(ctx: LowerContext, flowName: string | undefined): boolean {
+  if (flowName === undefined) return false;
+  const wanted = flowName.toLowerCase();
+  return ctx.ir.declarations.some((d) => d.name.toLowerCase() === wanted);
+}
+
+/**
  * The Apex identifier for a Flow name, allocated once and reused.
  *
  * Every Flow name goes through Scope, so a Flow element called `Update` or a

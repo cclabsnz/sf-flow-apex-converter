@@ -11,6 +11,7 @@ export type ApexStmt =
   | { stmt: 'fieldWrite'; record: string; field: string; value: ApexExpr }
   | { stmt: 'collectInto'; collection: string; record: string; addAll: boolean }
   | { stmt: 'queryInto'; type: ApexType; name: string; query: SoqlQuery }
+  | { stmt: 'queryAssign'; name: string; query: SoqlQuery }
   | { stmt: 'ifThen'; condition: ApexExpr; body: ApexStmt[]; elseBody: ApexStmt[] }
   | { stmt: 'forEach'; itemType: ApexType; item: string; collection: string; body: ApexStmt[] }
   | { stmt: 'dmlBulk'; operation: DmlOperation; collection: string }
@@ -85,6 +86,24 @@ export function queryInto(type: ApexType, name: string, query: SoqlQuery): ApexS
     );
   }
   return { stmt: 'queryInto', type, name, query };
+}
+
+/**
+ * `accts = [SELECT ...];` — the assigning counterpart to queryInto.
+ *
+ * A name that is both a Flow declaration and a lookup's output reference is
+ * declared once at the method's top level, and the element writes into it.
+ * queryInto DECLARES, which is only correct for an element sitting at the top
+ * level: inside an `if` or a `for` it block-scopes the name, and every later
+ * reference — including the Result assembly — is "Variable does not exist".
+ *
+ * There is no type to check the query's object against here, because the
+ * declaration this assigns into is the one that carries the type; queryInto
+ * still performs that check where both facts are present.
+ */
+export function queryAssign(name: string, query: SoqlQuery): ApexStmt {
+  requireIdentifier(name, 'A query assignment target');
+  return { stmt: 'queryAssign', name, query };
 }
 
 export function ifThen(

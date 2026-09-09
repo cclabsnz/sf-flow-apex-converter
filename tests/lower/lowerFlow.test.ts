@@ -219,11 +219,14 @@ describe('lowerFlow', () => {
     expect(lowerFlow(ir).source).toContain('Account Acct;');
   });
 
-  it('does not re-declare a Get Records outputReference that is also a Flow declaration', () => {
+  it('declares a Get Records outputReference once, at the top level, and assigns into it', () => {
     // "Manually store record data into a named variable" is the standard Get
-    // Records configuration in Flow Builder. Pre-declaring the same name that
-    // queryInto is about to declare produces "Variable already defined: Accts",
-    // and the class never deploys.
+    // Records configuration in Flow Builder. The name is BOTH a Flow
+    // declaration and element-owned, so it gets its one top-level declaration
+    // and the element assigns into it. Letting the element declare it instead
+    // is only correct when the element sits at the method's top level; inside
+    // an if or a for it block-scopes the name and every later reference is
+    // "Variable does not exist".
     const ir = flow({
       declarations: [{
         name: 'Accts', kind: 'variable', dataType: 'SObject', objectType: 'Account',
@@ -242,19 +245,21 @@ describe('lowerFlow', () => {
       start: { triggerKind: 'autolaunched', connector: { target: 'Get_Accounts', isFault: false }, sourceJson: '{}' },
     });
     const result = lowerFlow(ir);
-    expect(result.source).not.toMatch(/List<Account> Accts;/);
     expect(result.source.match(/List<Account> Accts/g)).toHaveLength(1);
-    expect(result.source).toContain('List<Account> Accts = [');
+    expect(result.source).toContain('List<Account> Accts = new List<Account>();');
+    expect(result.source).toContain('Accts = [');
+    expect(result.source).not.toContain('List<Account> Accts = [');
   });
 
-  it('does not re-declare a collection processor\'s iteration variable that is also a Flow declaration', () => {
+  it('declares a collection processor\'s iteration variable once, and assigns into it', () => {
     // Flow Builder declares a "currentItem_X" variable for a Filter/Sort/Map
     // element's iteration variable the same way it declares any other
-    // variable, so it shows up in ir.declarations too. lowerCollectionProcessor
-    // already emits it as the forEach loop's own iteration variable
-    // (`for (T item : ...)` declares it) — pre-declaring the same name again
-    // as a plain top-level local produces "Duplicate variable", confirmed by
-    // the real compiler, not just a guess about Apex scoping rules.
+    // variable, so it shows up in ir.declarations too. It therefore gets its
+    // top-level declaration; the for-each iterates a separate, element-owned
+    // identifier and copies each item into the declared name. Declaring it in
+    // the for-each header instead is "Variable already defined" against the
+    // top-level declaration, and omitting the top-level declaration puts it
+    // out of scope for anything after the element.
     const ir = flow({
       declarations: [
         { name: 'Items', kind: 'variable', dataType: 'SObject', objectType: 'Account',
@@ -274,12 +279,16 @@ describe('lowerFlow', () => {
       start: { triggerKind: 'autolaunched', connector: { target: 'Filter', isFault: false }, sourceJson: '{}' },
     });
     const result = lowerFlow(ir);
-    expect(result.source.match(/Account currentItem_Filter/g)).toHaveLength(1);
-    expect(result.source).toContain('for (Account currentItem_Filter : Items)');
+    expect(result.source.match(/Account currentItem_Filter\b/g)).toHaveLength(1);
+    expect(result.source).toContain('Account currentItem_Filter;');
+    expect(result.source).not.toContain('for (Account currentItem_Filter : Items)');
+    expect(result.source).toMatch(/for \(Account (\w+) : Items\) \{\n\s+currentItem_Filter = \1;/);
   });
 
-  it('refuses a Get Records outputReference that collides with an input parameter', () => {
-    // The element would redeclare a parameter, which Apex also rejects.
+  it('assigns into an input parameter a Get Records also outputs to', () => {
+    // Apex method parameters are not final, so the element assigning into the
+    // parameter compiles. This used to be refused because the element declared
+    // its own name; with the declaration inverted there is nothing to refuse.
     const ir = flow({
       declarations: [{
         name: 'Accts', kind: 'variable', dataType: 'SObject', objectType: 'Account',
@@ -297,6 +306,56 @@ describe('lowerFlow', () => {
       }],
       start: { triggerKind: 'autolaunched', connector: { target: 'Get_Accounts', isFault: false }, sourceJson: '{}' },
     });
-    expect(() => lowerFlow(ir)).toThrow(LoweringRefusal);
+    const result = lowerFlow(ir);
+    expect(result.source).toContain('execute(List<Account> Accts)');
+    expect(result.source).toContain('Accts = [');
+    expect(result.source).not.toContain('List<Account> Accts = [');
+  });
+
+  it('keeps an element-owned declaration inside a nested block in scope afterwards', () => {
+    // "Get Records inside a decision branch" is one of the most common Flow
+    // shapes. When the element declared its own output variable, that
+    // declaration was scoped to the if-block and every later reference —
+    // including the Result assembly — was out of scope. Compiler-confirmed:
+    // "Variable does not exist: Found".
+    const ir = flow({
+      declarations: [
+        { name: 'Flag', kind: 'variable', dataType: 'Boolean', isCollection: false,
+          isInput: true, isOutput: false, sourceJson: '{}' },
+        { name: 'Found', kind: 'variable', dataType: 'SObject', objectType: 'Account',
+          isCollection: true, isInput: false, isOutput: true, sourceJson: '{}' },
+      ],
+      nodes: [
+        { name: 'D', kind: 'decisions', sourceJson: '{}', raw: {},
+          connectors: [{ target: 'Get_Accounts', isFault: false }, { target: 'J', isFault: false }],
+          body: {
+            kind: 'decision',
+            rules: [{ name: 'Yes', conditionLogic: 'and', target: 'Get_Accounts',
+              conditions: [{ left: 'Flag', operator: 'EqualTo', right: { kind: 'boolean', raw: 'true' } }] }],
+            defaultTarget: 'J',
+          } },
+        { name: 'Get_Accounts', kind: 'recordlookups', object: 'Account', sourceJson: '{}', raw: {},
+          connectors: [{ target: 'J', isFault: false }],
+          body: {
+            kind: 'record', object: 'Account', filters: [], inputAssignments: [],
+            queriedFields: ['Id', 'Name'], getFirstRecordOnly: false,
+            storeOutputAutomatically: false, outputReference: 'Found', outputAssignments: [],
+            assignNullValuesIfNoRecordsFound: false,
+          } },
+        { name: 'J', kind: 'assignments', connectors: [], sourceJson: '{}', raw: {},
+          body: { kind: 'assignment', items: [] } },
+      ],
+      start: { triggerKind: 'autolaunched', connector: { target: 'D', isFault: false }, sourceJson: '{}' },
+    });
+    const source = lowerFlow(ir).source;
+    const lines = source.split('\n');
+    const declaredAt = lines.findIndex((l) => /^\s{8}List<Account> Found = new List<Account>\(\);$/.test(l));
+    const assignedAt = lines.findIndex((l) => /^\s+Found = \[$/.test(l));
+    // Declared at method top level (two indents), not inside the if-block.
+    expect(declaredAt).toBeGreaterThanOrEqual(0);
+    expect(assignedAt).toBeGreaterThan(declaredAt);
+    expect(source).not.toContain('List<Account> Found = [');
+    // The Result assembly reads it after the branch closes.
+    expect(source).toContain('result.Found = Found;');
   });
 });

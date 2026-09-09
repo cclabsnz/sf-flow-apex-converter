@@ -1,9 +1,11 @@
-import { ApexStmt, collectInto, declare, dmlBulk, fieldWrite, queryInto } from '../../apex/stmt.js';
+import {
+  ApexStmt, assign, collectInto, declare, dmlBulk, fieldWrite, queryAssign, queryInto,
+} from '../../apex/stmt.js';
 import { SoqlSpec, soql } from '../../apex/soql.js';
 import { construct, literal, methodCall, ternary, variable } from '../../apex/expr.js';
 import { BOOLEAN, INTEGER, NULL, listOf, sobjectType } from '../../apex/types.js';
 import { FlowNode, RecordBody } from '../../ir/types.js';
-import { LowerContext, apexName } from '../context.js';
+import { LowerContext, apexName, isFlowDeclared } from '../context.js';
 import { UnsupportedConstructError, lowerValue } from '../value.js';
 
 /** The DML operation a record element performs, from its Flow element kind. */
@@ -102,7 +104,11 @@ function lowerLookup(node: FlowNode, body: RecordBody, ctx: LowerContext): ApexS
     );
     return [
       queryInto(listType, rows, soql(spec)),
-      declare(singleType, target, first),
+      // See isFlowDeclared: a name the Flow declares is declared once at the
+      // method's top level, so the element assigns rather than declares.
+      isFlowDeclared(ctx, body.outputReference)
+        ? assign(target, first)
+        : declare(singleType, target, first),
     ];
   }
 
@@ -112,7 +118,15 @@ function lowerLookup(node: FlowNode, body: RecordBody, ctx: LowerContext): ApexS
   const targetType = declared?.provenance === 'declared'
     ? declared.type
     : listOf(sobjectType(object));
-  return [queryInto(targetType, target, soql(spec))];
+  const query = soql(spec);
+  // Built unconditionally: queryInto is where the declared type and the query's
+  // object are checked against each other, and that check must run even when the
+  // emitted statement is the assigning form, which carries no type of its own.
+  const declaring = queryInto(targetType, target, query);
+  // See isFlowDeclared. queryInto DECLARES, which block-scopes the name when the
+  // element sits inside an if or a for; queryAssign writes into the declaration
+  // lowerFlow already emitted at the method's top level.
+  return isFlowDeclared(ctx, body.outputReference) ? [queryAssign(target, query)] : [declaring];
 }
 
 function lowerDml(node: FlowNode, body: RecordBody, ctx: LowerContext): ApexStmt[] {
