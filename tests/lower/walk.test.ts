@@ -1,4 +1,5 @@
 import { emitStmt } from '../../src/apex/emit.js';
+import { ApexTypeError } from '../../src/apex/errors.js';
 import { Scope } from '../../src/apex/scope.js';
 import { FlowDeclaration, FlowIR, FlowNode } from '../../src/ir/types.js';
 import { buildCfg } from '../../src/lower/cfg.js';
@@ -281,6 +282,65 @@ describe('lowerFrom', () => {
     expect(iR1).toBeLessThan(iR2);
     expect(iR2).toBeLessThan(iR3);
     expect(iR3).toBeLessThan(iDef);
+  });
+});
+
+describe('lowerFrom and the element-name boundary for ApexTypeError', () => {
+  it("names the decision when a rule's condition cannot be built", () => {
+    // Real Flow, real CLI: `{!Acct.AnnualRevenue} > 1000`. The naming heuristic
+    // misses AnnualRevenue and guesses String, the comparison constructor
+    // refuses String > Decimal, and the error escaped lowerElement's boundary
+    // because lowerConditions is called from lowerFrom, not from lowerElement.
+    const d = node('D', {
+      kind: 'decisions',
+      connectors: [{ target: 'T', isFault: false }, { target: 'F', isFault: false }],
+      body: {
+        kind: 'decision',
+        rules: [{
+          name: 'Big', conditionLogic: 'and', target: 'T',
+          conditions: [{
+            left: 'Acct.AnnualRevenue', operator: 'GreaterThan',
+            right: { kind: 'number', raw: '1000' },
+          }],
+        }],
+        defaultTarget: 'F',
+      },
+    });
+    const flow = ir([d, assignNode('T', undefined, 'x'), assignNode('F', undefined, 'y')], 'D');
+    flow.declarations = [
+      { name: 'Acct', kind: 'variable', dataType: 'SObject', objectType: 'Account',
+        isCollection: false, isInput: false, isOutput: false, sourceJson: '{}' },
+      decl('x'), decl('y'),
+    ];
+    try {
+      lowerFrom(buildCfg(flow), 'D', undefined, makeCtx(flow));
+      throw new Error('expected lowerFrom to throw');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApexTypeError);
+      expect((error as Error).message).toContain("While lowering 'D' (decisions)");
+    }
+  });
+
+  it('names the loop when building it cannot resolve a type', () => {
+    // types.resolve is documented never to throw, so this drives the boundary
+    // through the TypeSource seam rather than pretending otherwise. The loop
+    // branch now also calls assign(), which can throw, and anything added to
+    // that branch later should not have to remember to annotate itself.
+    const flow = ir([loop('L', 'B', 'A'), assignNode('B', 'L', 'x'), assignNode('A', undefined, 'y')], 'L');
+    flow.declarations = [decl('x'), decl('y')];
+    const c = makeCtx(flow);
+    c.types = {
+      resolve: () => {
+        throw new ApexTypeError('no type for that');
+      },
+    };
+    try {
+      lowerFrom(buildCfg(flow), 'L', undefined, c);
+      throw new Error('expected lowerFrom to throw');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApexTypeError);
+      expect((error as Error).message).toContain("While lowering 'L' (loops)");
+    }
   });
 });
 
