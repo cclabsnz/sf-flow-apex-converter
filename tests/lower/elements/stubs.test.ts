@@ -159,6 +159,25 @@ describe('lowerSubflow', () => {
     expect(() => lowerSubflow(subflowNode('Validate', '2Bad'), c))
       .toThrow(UnsupportedConstructError);
   });
+
+  it('refuses a subflow name longer than Apex\'s 40-character class-name limit', () => {
+    // Verified against the org: a 41-character class name fails with
+    // "Identifier name is too long"; 40 deploys. A class reference cannot be
+    // shortened here for the same reason it cannot be renamed above — this
+    // converter does not generate that class, so it has nothing to shorten.
+    const c = ctx();
+    const longName = 'A'.repeat(41);
+    expect(() => lowerSubflow(subflowNode('Validate', longName), c))
+      .toThrow(UnsupportedConstructError);
+  });
+
+  it('accepts a subflow name exactly at the 40-character limit', () => {
+    const c = ctx();
+    const fortyChars = 'A'.repeat(40);
+    const out = lowerSubflow(subflowNode('Validate', fortyChars), c)
+      .map((s) => emitStmt(s)).join('\n');
+    expect(out).toContain(fortyChars);
+  });
 });
 
 describe('lowerAction', () => {

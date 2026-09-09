@@ -115,6 +115,17 @@ export function lowerSubflow(node: FlowNode, ctx: LowerContext): ApexStmt[] {
     );
   }
 
+  // Apex class names cap at 40 characters; Flow names do not. Verified against the
+  // org: a 41-character class name fails with "Identifier name is too long". A class
+  // reference cannot be shortened here for the same reason it cannot be renamed —
+  // this converter does not generate that class.
+  if (body.flowName.length > 40) {
+    throw new UnsupportedConstructError(
+      `Subflow '${body.flowName}' is ${body.flowName.length} characters; an Apex class ` +
+        `name cannot exceed 40, and a class reference cannot be shortened by this converter.`
+    );
+  }
+
   ctx.notes.push({
     kind: 'dependency',
     detail: `subflow ${body.flowName} must be converted separately`,

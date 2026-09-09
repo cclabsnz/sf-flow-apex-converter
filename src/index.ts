@@ -8,6 +8,7 @@ import { BulkifiedApexGenerator } from './utils/BulkifiedApexGenerator.js';
 import { Logger, LogLevel } from './utils/Logger.js';
 import { LoweringRefusal } from './lower/context.js';
 import { lowerFlow } from './lower/lowerFlow.js';
+import { UnsupportedConstructError } from './lower/value.js';
 
 const program = new Command();
 
@@ -150,6 +151,16 @@ program
         // worse than none.
         console.error('Cannot convert this Flow:');
         for (const p of error.problems) console.error(`  - ${p}`);
+        process.exitCode = 1;
+        return;
+      }
+      if (error instanceof UnsupportedConstructError) {
+        // Distinct from LoweringRefusal (a whole-graph structural failure):
+        // this is one construct — e.g. a subflow reference this converter
+        // cannot represent — but from the CLI's perspective the outcome is
+        // identical. No .cls is written either way.
+        console.error('Cannot convert this Flow:');
+        console.error(`  - ${error.message}`);
         process.exitCode = 1;
         return;
       }
