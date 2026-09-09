@@ -157,6 +157,25 @@ export function declarationTypeSource(ir: FlowIR): TypeSource {
             note: `${reference} declared as ${declared.dataType}`,
           };
         }
+        // A loop's element name IS a variable in Flow: `{!Loop_over_Loans}` is
+        // the current item. objectOf below already knew that, but only for the
+        // DOTTED path, so a bare resolve fell through to the String guess. That
+        // is why lowerAssignment's `kind === 'SObject'` gate never fired for a
+        // write onto a loop variable, and the write's guessed field type never
+        // reached the class header.
+        const loop = loops.get(reference.toLowerCase());
+        if (loop && loop.body?.kind === 'loop') {
+          const source = declarations.get(loop.body.collection.toLowerCase());
+          if (source) {
+            return {
+              // The loop's item, not the collection: isCollection is false here
+              // however the collection itself is declared.
+              type: flowTypeToApex(source.dataType, source.objectType, false, source.apexClass),
+              provenance: 'declared',
+              note: `${reference} iterates ${loop.body.collection}, declared as ${source.dataType}`,
+            };
+          }
+        }
         return {
           type: STRING,
           provenance: 'heuristic',
