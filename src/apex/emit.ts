@@ -5,13 +5,21 @@ import { renderType } from './types.js';
 
 const INDENT = '    ';
 
-/** Nodes that render as an infix operator expression, and so can be re-parsed. */
+/**
+ * Nodes that render as an operator expression, and so can be re-parsed.
+ *
+ * `ternary` is here for the same reason the infix operators are, only more so:
+ * `?:` binds looser than everything below it, so an unparenthesised conditional
+ * used as an operand swallows its neighbours, and an unparenthesised infix
+ * condition inside one is swallowed BY it.
+ */
 function isInfix(e: ApexExpr): boolean {
   return (
     e.node === 'comparison' ||
     e.node === 'equality' ||
     e.node === 'logical' ||
-    e.node === 'nullTest'
+    e.node === 'nullTest' ||
+    e.node === 'ternary'
   );
 }
 
@@ -63,6 +71,10 @@ export function emitExpr(e: ApexExpr): string {
       return `${e.name}(${e.args.map(emitExpr).join(', ')})`;
     case 'construct':
       return `new ${renderType(e.type)}(${e.args.map(emitExpr).join(', ')})`;
+    case 'ternary':
+      return (
+        `${operand(e.condition, e)} ? ${operand(e.whenTrue, e)} : ${operand(e.whenFalse, e)}`
+      );
   }
 }
 

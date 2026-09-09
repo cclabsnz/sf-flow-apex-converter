@@ -1,11 +1,11 @@
 import { ApexTypeError } from '../../src/apex/errors.js';
 import {
   comparison, construct, equality, fieldRead, literal, logical, methodCall, nullTest, staticCall,
-  stringLiteral, variable,
+  stringLiteral, ternary, variable,
 } from '../../src/apex/expr.js';
 import { emitExpr } from '../../src/apex/emit.js';
 import { declare } from '../../src/apex/stmt.js';
-import { BOOLEAN, DATE, DECIMAL, ID, INTEGER, OBJECT, STRING, listOf, sobjectType } from '../../src/apex/types.js';
+import { BOOLEAN, DATE, DECIMAL, ID, INTEGER, NULL, OBJECT, STRING, listOf, sobjectType } from '../../src/apex/types.js';
 
 describe('fieldRead', () => {
   it('carries the type it was told, never Object', () => {
@@ -219,5 +219,54 @@ describe('staticCall', () => {
 
   it('refuses an invalid method name', () => {
     expect(() => staticCall('2bad', [], BOOLEAN)).toThrow(ApexTypeError);
+  });
+});
+
+describe('ternary', () => {
+  it('emits a conditional expression', () => {
+    const e = ternary(
+      methodCall(variable(listOf(sobjectType('Account')), 'rows'), 'isEmpty', [], BOOLEAN),
+      literal(NULL, 'null'),
+      methodCall(variable(listOf(sobjectType('Account')), 'rows'), 'get',
+        [literal(INTEGER, '0')], sobjectType('Account')),
+      sobjectType('Account')
+    );
+    expect(emitExpr(e)).toBe('rows.isEmpty() ? null : rows.get(0)');
+  });
+
+  it('refuses a non-Boolean condition — Apex has no truthiness', () => {
+    expect(() => ternary(
+      literal(DECIMAL, '1'), literal(DECIMAL, '1'), literal(DECIMAL, '2'), DECIMAL
+    )).toThrow(ApexTypeError);
+  });
+
+  it('refuses a branch the result type cannot hold', () => {
+    expect(() => ternary(
+      literal(BOOLEAN, 'true'), literal(STRING, "'x'"), literal(DECIMAL, '1'), DECIMAL
+    )).toThrow(ApexTypeError);
+  });
+
+  it('accepts null in either branch', () => {
+    const e = ternary(
+      literal(BOOLEAN, 'true'), literal(NULL, 'null'),
+      variable(sobjectType('Account'), 'a'), sobjectType('Account')
+    );
+    expect(emitExpr(e)).toBe('true ? null : a');
+  });
+
+  it('parenthesises an infix operand so the emitted text re-parses as the tree', () => {
+    // `?:` binds looser than every operator below it, so an infix condition
+    // emitted bare would swallow the branches.
+    const e = ternary(
+      equality(variable(ID, 'a'), '==', literal(ID, 'null')),
+      literal(DECIMAL, '1'), literal(DECIMAL, '2'), DECIMAL
+    );
+    expect(emitExpr(e)).toBe('(a == null) ? 1 : 2');
+  });
+
+  it('parenthesises itself when used as an operand of an infix node', () => {
+    const t = ternary(literal(BOOLEAN, 'true'), literal(DECIMAL, '1'), literal(DECIMAL, '2'), DECIMAL);
+    expect(emitExpr(equality(t, '==', literal(DECIMAL, '1'))))
+      .toBe('(true ? 1 : 2) == 1');
   });
 });

@@ -126,6 +126,63 @@ describe('lowerRecord', () => {
     expect(match?.[1]).not.toBe(reserved);
   });
 
+  it('stores a getFirstRecordOnly lookup into a single SObject, not a List', () => {
+    // Flow Builder's DEFAULT Get Records configuration. Ignoring the flag
+    // emitted `List<T> X = [...]`, and a later `{!X.Name}` lowered to
+    // `X.get('Name')` — compiler-confirmed as "Method does not exist or
+    // incorrect signature: void get(String) from the type List<Account>".
+    const node = lookup();
+    if (node.body?.kind === 'record') {
+      node.body.getFirstRecordOnly = true;
+      node.body.outputReference = 'Found';
+    }
+    const c = ctx([{
+      name: 'Found', kind: 'variable', dataType: 'SObject',
+      objectType: 'LLC_BI__Pricing_Stream__c', isCollection: false,
+      isInput: false, isOutput: false, sourceJson: '{}',
+    }]);
+    const out = lowerRecord(node, c).map((s) => emitStmt(s)).join('\n');
+    expect(out).not.toMatch(/List<[^>]+> Found =/);
+    expect(out).toContain('LLC_BI__Pricing_Stream__c Found = ');
+    expect(out).toMatch(/List<LLC_BI__Pricing_Stream__c> \w+ = \[/);
+    // Flow's semantics: no record found leaves the variable null. `[...][0]`
+    // would throw on an empty result instead.
+    expect(out).toMatch(/Found = \w+\.isEmpty\(\) \? null : \w+\.get\(0\);/);
+    expect(out).not.toContain('][0]');
+  });
+
+  it('caps a getFirstRecordOnly query at one row', () => {
+    const node = lookup();
+    if (node.body?.kind === 'record') node.body.getFirstRecordOnly = true;
+    const out = lowerRecord(node, ctx()).map((s) => emitStmt(s)).join('\n');
+    expect(out).toContain('LIMIT 1');
+  });
+
+  it('declares an element-internal getFirstRecordOnly target in place', () => {
+    // No outputReference, so the target is the element's own name and is not a
+    // Flow declaration — nothing else declares it.
+    const node = lookup();
+    if (node.body?.kind === 'record') node.body.getFirstRecordOnly = true;
+    const out = lowerRecord(node, ctx()).map((s) => emitStmt(s)).join('\n');
+    expect(out).toMatch(/LLC_BI__Pricing_Stream__c Get_Streams = \w+\.isEmpty\(\)/);
+  });
+
+  it('refuses a getFirstRecordOnly lookup whose target is declared a collection', () => {
+    // The Flow says "first record only" and its own declaration says List.
+    // Those disagree; picking one would be a guess.
+    const node = lookup();
+    if (node.body?.kind === 'record') {
+      node.body.getFirstRecordOnly = true;
+      node.body.outputReference = 'Found';
+    }
+    const c = ctx([{
+      name: 'Found', kind: 'variable', dataType: 'SObject',
+      objectType: 'LLC_BI__Pricing_Stream__c', isCollection: true,
+      isInput: false, isOutput: false, sourceJson: '{}',
+    }]);
+    expect(() => lowerRecord(node, c)).toThrow(UnsupportedConstructError);
+  });
+
   it('refuses a lookup whose declared outputReference type does not match the query', () => {
     const node = lookup();
     if (node.body?.kind === 'record') {

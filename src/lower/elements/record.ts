@@ -1,7 +1,7 @@
 import { ApexStmt, collectInto, declare, dmlBulk, fieldWrite, queryInto } from '../../apex/stmt.js';
 import { SoqlSpec, soql } from '../../apex/soql.js';
-import { construct } from '../../apex/expr.js';
-import { listOf, sobjectType } from '../../apex/types.js';
+import { construct, literal, methodCall, ternary, variable } from '../../apex/expr.js';
+import { BOOLEAN, INTEGER, NULL, listOf, sobjectType } from '../../apex/types.js';
 import { FlowNode, RecordBody } from '../../ir/types.js';
 import { LowerContext, apexName } from '../context.js';
 import { UnsupportedConstructError, lowerValue } from '../value.js';
@@ -66,6 +66,46 @@ function lowerLookup(node: FlowNode, body: RecordBody, ctx: LowerContext): ApexS
 
   const target = apexName(ctx, body.outputReference ?? node.name);
   const declared = body.outputReference ? ctx.types.resolve(body.outputReference) : undefined;
+
+  // "Only the first record" is Flow Builder's DEFAULT Get Records configuration,
+  // and the target is then a single SObject, not a List. Ignoring the flag emitted
+  // `List<T> X = [...]`, so a later `{!X.Name}` lowered to `X.get('Name')` —
+  // compiler-confirmed: "Method does not exist or incorrect signature:
+  // void get(String) from the type List<Account>".
+  if (body.getFirstRecordOnly) {
+    // The Flow's own declaration and its own "first record only" flag disagree.
+    // Picking a winner would be a guess about which the admin meant.
+    if (declared?.provenance === 'declared' && declared.type.kind === 'List') {
+      throw new UnsupportedConstructError(
+        `${node.name} stores only the first record, but '${body.outputReference}' is declared ` +
+          `a collection. The Flow contradicts itself; refusing rather than choosing one.`
+      );
+    }
+    const singleType = declared?.provenance === 'declared'
+      ? declared.type
+      : sobjectType(object);
+    // Flow reads one record, so the query reads one row. Identical semantics,
+    // and it keeps the temp list off the heap for a large result set.
+    spec.limit = 1;
+    const listType = listOf(sobjectType(object));
+    // Allocated through Scope, not apexName's Flow-name cache: this identifier
+    // belongs to no Flow name, and a real element called `${target}_rows` must
+    // not collide with it.
+    const rows = ctx.scope.allocate(`${target}_rows`);
+    // NOT `[SELECT ... LIMIT 1][0]`, which throws System.ListException on an
+    // empty result. Flow leaves the variable null when nothing is found.
+    const first = ternary(
+      methodCall(variable(listType, rows), 'isEmpty', [], BOOLEAN),
+      literal(NULL, 'null'),
+      methodCall(variable(listType, rows), 'get', [literal(INTEGER, '0')], singleType),
+      singleType
+    );
+    return [
+      queryInto(listType, rows, soql(spec)),
+      declare(singleType, target, first),
+    ];
+  }
+
   // Use the Flow's own declared type when it has one, so queryInto's object check
   // compares two independently-sourced facts instead of one fact with itself —
   // deriving both sides from `object` made the mismatch check tautological.
