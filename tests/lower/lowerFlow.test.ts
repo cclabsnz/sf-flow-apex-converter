@@ -359,3 +359,32 @@ describe('lowerFlow', () => {
     expect(source).toContain('result.Found = Found;');
   });
 });
+
+describe('lowerFlow and Flow behaviour the output does not reproduce', () => {
+  it('carries a lowering note into the manifest and the class header', () => {
+    // A note must reach BOTH, the same way a guess does. A note recorded in
+    // ctx.notes and rendered nowhere is the silent drop it exists to prevent.
+    const ir = flow({
+      declarations: [{
+        name: 'Accts', kind: 'variable', dataType: 'SObject', objectType: 'Account',
+        isCollection: true, isInput: false, isOutput: false, sourceJson: '{}',
+      }],
+      nodes: [{
+        name: 'Get_Accounts', kind: 'recordlookups', connectors: [], sourceJson: '{}', raw: {},
+        object: 'Account',
+        body: {
+          kind: 'record', object: 'Account', filters: [], inputAssignments: [],
+          queriedFields: ['Id'], getFirstRecordOnly: false,
+          storeOutputAutomatically: false, outputReference: 'Accts', outputAssignments: [],
+          assignNullValuesIfNoRecordsFound: false,
+        },
+      }],
+      start: { triggerKind: 'autolaunched', connector: { target: 'Get_Accounts', isFault: false }, sourceJson: '{}' },
+    });
+    const { source, manifest } = lowerFlow(ir);
+    expect(manifest.notes.length).toBeGreaterThan(0);
+    expect(manifest.notes.join(' ')).toContain('Get_Accounts');
+    expect(source).toContain('Flow behaviour NOT reproduced exactly:');
+    expect(source).toContain(manifest.notes[0]);
+  });
+});

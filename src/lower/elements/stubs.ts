@@ -126,6 +126,25 @@ export function lowerSubflow(node: FlowNode, ctx: LowerContext): ApexStmt[] {
     );
   }
 
+  // The emitted call is `X.execute()` with no arguments, so every input binding
+  // the Flow declares would be silently discarded and the subflow would run on
+  // its defaults; every output binding would be discarded too, leaving the
+  // variables the Flow expects to receive results untouched. Both compile and
+  // are wrong, and neither is recoverable downstream — refuse instead. Ordered
+  // after the class-name checks: a name Apex can never accept is the more
+  // fundamental problem, and reporting the bindings first would send the reader
+  // after the wrong fix.
+  const bindings = [
+    ...body.inputs.map((i) => `input ${i.name}`),
+    ...body.outputs.map((o) => `output ${o.name}`),
+  ];
+  if (bindings.length > 0) {
+    throw new UnsupportedConstructError(
+      `Subflow '${body.flowName}' on ${node.name} declares ${bindings.join(', ')}, and this ` +
+        `milestone emits a no-argument call. Refusing rather than discarding the bindings.`
+    );
+  }
+
   ctx.notes.push({
     kind: 'dependency',
     detail: `subflow ${body.flowName} must be converted separately`,

@@ -118,6 +118,37 @@ describe('lowerSubflow', () => {
       storeOutputAutomatically: true },
   });
 
+  it('refuses a subflow with input bindings rather than discarding them', () => {
+    // `X.execute()` is emitted with no arguments, so every value the Flow passes
+    // in is silently discarded and the subflow runs on defaults. The bindings
+    // are not recoverable later: nothing downstream records them.
+    const node = subflowNode('Validate', 'NC_Validate_Dates');
+    if (node.body?.kind === 'subflow') {
+      node.body.inputs = [{ name: 'LoanId', value: { kind: 'reference', raw: 'TheLoan' } }];
+    }
+    expect(() => lowerSubflow(node, ctx())).toThrow(UnsupportedConstructError);
+    expect(() => lowerSubflow(node, ctx())).toThrow(/LoanId/);
+  });
+
+  it('refuses a subflow with output bindings rather than discarding them', () => {
+    const node = subflowNode('Validate', 'NC_Validate_Dates');
+    if (node.body?.kind === 'subflow') {
+      node.body.outputs = [{ name: 'Messages', value: { kind: 'none' }, target: 'AllMessages' }];
+    }
+    expect(() => lowerSubflow(node, ctx())).toThrow(UnsupportedConstructError);
+    expect(() => lowerSubflow(node, ctx())).toThrow(/Messages/);
+  });
+
+  it('refuses the class-name problem first, before the bindings', () => {
+    // A 46-character subflow name can never become an Apex class name at all;
+    // reporting the bindings instead would send the reader after the wrong fix.
+    const node = subflowNode('Validate', 'A'.repeat(46));
+    if (node.body?.kind === 'subflow') {
+      node.body.inputs = [{ name: 'LoanId', value: { kind: 'reference', raw: 'TheLoan' } }];
+    }
+    expect(() => lowerSubflow(node, ctx())).toThrow(/is 46 characters/);
+  });
+
   it('calls the subflow class and records a dependency', () => {
     const node = subflowNode('Validate', 'NC_Validate_Dates');
     const c = ctx();

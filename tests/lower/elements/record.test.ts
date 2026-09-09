@@ -185,6 +185,102 @@ describe('lowerRecord', () => {
     expect(() => lowerRecord(node, c)).toThrow(UnsupportedConstructError);
   });
 
+  it('refuses a lookup with per-field outputAssignments rather than dropping them', () => {
+    // <outputAssignments> writes named query fields into separate variables.
+    // Dropping them leaves those variables declared and never assigned, so
+    // every later read sees null — output that compiles and is wrong, which the
+    // acceptance gate cannot see.
+    const node = lookup();
+    if (node.body?.kind === 'record') {
+      node.body.outputAssignments = [{ field: 'Name', assignToReference: 'StreamName' }];
+    }
+    expect(() => lowerRecord(node, ctx())).toThrow(UnsupportedConstructError);
+    expect(() => lowerRecord(node, ctx())).toThrow(/outputAssignments|StreamName/);
+  });
+
+  it('refuses a create that assigns the new record Id to a reference', () => {
+    // assignRecordIdToReference is how a Flow feeds a created record's Id to a
+    // later element. Dropping it leaves that variable null.
+    const node = lookup({ name: 'Make_Stream', kind: 'recordcreates' });
+    if (node.body?.kind === 'record') node.body.assignRecordIdToReference = 'NewId';
+    expect(() => lowerRecord(node, ctx())).toThrow(UnsupportedConstructError);
+    expect(() => lowerRecord(node, ctx())).toThrow(/NewId/);
+  });
+
+  it('refuses a DML element that takes a whole record as its input', () => {
+    // inputReference means "update THIS record variable". lowerDml builds a
+    // fresh `new T()` and writes inputAssignments onto it, so dropping
+    // inputReference issues DML against an empty record instead of the Flow's.
+    const node = lookup({ name: 'Save_Stream', kind: 'recordupdates' });
+    if (node.body?.kind === 'record') node.body.inputReference = 'TheStream';
+    expect(() => lowerRecord(node, ctx())).toThrow(UnsupportedConstructError);
+    expect(() => lowerRecord(node, ctx())).toThrow(/TheStream/);
+  });
+
+  it('refuses filters combined with anything but AND', () => {
+    const node = lookup();
+    if (node.body?.kind === 'record') {
+      node.body.filterLogic = '1 OR 2';
+      node.body.filters = [
+        { left: 'A__c', operator: 'In', right: { kind: 'reference', raw: 'Ids' } },
+        { left: 'B__c', operator: 'In', right: { kind: 'reference', raw: 'Ids' } },
+      ];
+    }
+    expect(() => lowerRecord(node, ctx())).toThrow(UnsupportedConstructError);
+    expect(() => lowerRecord(node, ctx())).toThrow(/1 OR 2/);
+  });
+
+  it('ignores filterLogic when there are fewer than two filters', () => {
+    // With one filter every value of filterLogic means the same thing, so
+    // there is nothing being dropped.
+    const node = lookup();
+    if (node.body?.kind === 'record') {
+      node.body.filterLogic = 'or';
+      node.body.filters = [
+        { left: 'A__c', operator: 'In', right: { kind: 'reference', raw: 'Ids' } },
+      ];
+    }
+    expect(() => lowerRecord(node, ctx())).not.toThrow();
+  });
+
+  it('refuses a DML element with record filters rather than dropping them', () => {
+    // "Update records matching these criteria" — lowerDml reads only
+    // inputAssignments, so dropping the filters issues DML against a record
+    // the Flow never selected.
+    const node = lookup({ name: 'Save_Stream', kind: 'recordupdates' });
+    if (node.body?.kind === 'record') {
+      node.body.filters = [
+        { left: 'A__c', operator: 'EqualTo', right: { kind: 'string', raw: 'x' } },
+      ];
+    }
+    expect(() => lowerRecord(node, ctx())).toThrow(UnsupportedConstructError);
+  });
+
+  it('notes that a lookup finding nothing does not reproduce Flow exactly', () => {
+    // assignNullValuesIfNoRecordsFound was read nowhere. It is not refused —
+    // the divergence is narrow — but it must not vanish either.
+    const node = lookup();
+    if (node.body?.kind === 'record') node.body.assignNullValuesIfNoRecordsFound = false;
+    const c = ctx();
+    lowerRecord(node, c);
+    const notes = c.notes.filter((n) => n.kind === 'note').map((n) => n.detail).join(' ');
+    expect(notes).toContain('Get_Streams');
+    expect(notes).toMatch(/no records/i);
+  });
+
+  it('says nothing when the emitted no-records behaviour matches the Flow', () => {
+    // getFirstRecordOnly + assignNullValuesIfNoRecordsFound is exactly what
+    // `rows.isEmpty() ? null : rows.get(0)` does.
+    const node = lookup();
+    if (node.body?.kind === 'record') {
+      node.body.getFirstRecordOnly = true;
+      node.body.assignNullValuesIfNoRecordsFound = true;
+    }
+    const c = ctx();
+    lowerRecord(node, c);
+    expect(c.notes.filter((n) => n.kind === 'note')).toEqual([]);
+  });
+
   it('refuses a lookup whose declared outputReference type does not match the query', () => {
     const node = lookup();
     if (node.body?.kind === 'record') {

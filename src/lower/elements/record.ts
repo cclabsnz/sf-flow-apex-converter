@@ -69,6 +69,26 @@ function lowerLookup(node: FlowNode, body: RecordBody, ctx: LowerContext): ApexS
   const target = apexName(ctx, body.outputReference ?? node.name);
   const declared = body.outputReference ? ctx.types.resolve(body.outputReference) : undefined;
 
+  // assignNullValuesIfNoRecordsFound: true means Flow nulls the output when the
+  // lookup finds nothing; false means Flow leaves whatever was there. What this
+  // lowering emits is fixed — null for a single record, an empty list for a
+  // collection — so where that differs from the flag the difference is recorded
+  // rather than dropped. The one exact match is "first record only" with the
+  // flag set, which is precisely `rows.isEmpty() ? null : rows.get(0)`.
+  const emitted = body.getFirstRecordOnly ? 'null' : 'an empty list';
+  const flowWould = body.assignNullValuesIfNoRecordsFound
+    ? 'null'
+    : 'whatever value it already held';
+  if (emitted !== flowWould) {
+    ctx.notes.push({
+      kind: 'note',
+      detail:
+        `${node.name} finding no records sets '${target}' to ${emitted}; the Flow ` +
+        `(assignNullValuesIfNoRecordsFound=${body.assignNullValuesIfNoRecordsFound}) ` +
+        `would leave ${flowWould}.`,
+    });
+  }
+
   // "Only the first record" is Flow Builder's DEFAULT Get Records configuration,
   // and the target is then a single SObject, not a List. Ignoring the flag emitted
   // `List<T> X = [...]`, so a later `{!X.Name}` lowered to `X.get('Name')` —
@@ -136,6 +156,20 @@ function lowerDml(node: FlowNode, body: RecordBody, ctx: LowerContext): ApexStmt
   }
   const operation = operationOf(node.kind) as 'insert' | 'update' | 'delete';
 
+  // "Update every record matching these criteria" — this lowering reads only
+  // inputAssignments and issues DML on a freshly constructed record, so filters
+  // here select nothing and the DML lands on a record the Flow never chose.
+  // Not one of the fields the review enumerated, but refusing filterLogic on a
+  // DML element while dropping the very filters it describes would be
+  // incoherent; see the report.
+  if (body.filters.length > 0) {
+    throw new UnsupportedConstructError(
+      `${node.name} selects its records with ${body.filters.length} filter(s), which this ` +
+        `milestone does not lower for a ${node.kind} element — it constructs a new record ` +
+        `and writes inputAssignments onto it. Refusing rather than acting on the wrong record.`
+    );
+  }
+
   const record = apexName(ctx, node.name);
   // Allocated outside the Flow-name cache: a real Flow element genuinely named
   // `${node.name}_records` would otherwise resolve to the same identifier via
@@ -156,6 +190,49 @@ function lowerDml(node: FlowNode, body: RecordBody, ctx: LowerContext): ApexStmt
 }
 
 /**
+ * Modelled RecordBody fields that carry meaning this milestone does not lower.
+ *
+ * Each of these is read from the Flow and would otherwise be dropped in silence —
+ * they never reach `ir.unsupported`, precisely because the IR models them. Every
+ * one below produces output that COMPILES and does the wrong thing, which the
+ * acceptance gate (`sf project deploy validate`) cannot see, so each is refused
+ * rather than noted.
+ */
+function refuseUnloweredRecordFields(node: FlowNode, body: RecordBody): void {
+  if (body.outputAssignments.length > 0) {
+    const targets = body.outputAssignments.map((o) => `${o.field} -> ${o.assignToReference}`);
+    throw new UnsupportedConstructError(
+      `${node.name} has ${body.outputAssignments.length} per-field outputAssignments ` +
+        `(${targets.join(', ')}), which this milestone does not lower. Dropping them would ` +
+        `leave those variables declared and never assigned, so every later read sees null.`
+    );
+  }
+  if (body.assignRecordIdToReference) {
+    throw new UnsupportedConstructError(
+      `${node.name} assigns the record Id to '${body.assignRecordIdToReference}', which this ` +
+        `milestone does not lower. Dropping it would leave that variable null wherever the ` +
+        `Flow reads the new record's Id.`
+    );
+  }
+  if (body.inputReference) {
+    throw new UnsupportedConstructError(
+      `${node.name} takes '${body.inputReference}' as its whole record input, which this ` +
+        `milestone does not lower. It emits DML on a freshly constructed record instead, ` +
+        `so dropping this would write an empty record rather than the Flow's.`
+    );
+  }
+  // filterLogic only combines filters, so with fewer than two of them every value
+  // ('and', 'or', '1') means the same thing and nothing is being dropped.
+  const logic = body.filterLogic?.trim().toLowerCase();
+  if (body.filters.length > 1 && logic !== undefined && logic !== 'and') {
+    throw new UnsupportedConstructError(
+      `${node.name} combines its filters with '${body.filterLogic}'; this milestone's query ` +
+        `builder models a single ANDed WHERE term. Refusing rather than dropping the logic.`
+    );
+  }
+}
+
+/**
  * A record element.
  *
  * DML is collected into a list and issued once even though this milestone does
@@ -168,6 +245,7 @@ export function lowerRecord(node: FlowNode, ctx: LowerContext): ApexStmt[] {
   if (body?.kind !== 'record') {
     throw new UnsupportedConstructError(`${node.name} has no record body.`);
   }
+  refuseUnloweredRecordFields(node, body);
   return operationOf(node.kind) === 'query'
     ? lowerLookup(node, body, ctx)
     : lowerDml(node, body, ctx);
