@@ -1,9 +1,12 @@
 import {
   ApexStmt, assign, collectInto, declare, dmlBulk, fieldWrite, queryAssign, queryInto,
 } from '../../apex/stmt.js';
+import { ApexTypeError } from '../../apex/errors.js';
 import { SoqlSpec, soql } from '../../apex/soql.js';
 import { construct, literal, methodCall, ternary, variable } from '../../apex/expr.js';
-import { BOOLEAN, INTEGER, NULL, listOf, sobjectType } from '../../apex/types.js';
+import {
+  BOOLEAN, INTEGER, NULL, listOf, renderType, sameName, sobjectType,
+} from '../../apex/types.js';
 import { FlowNode, RecordBody } from '../../ir/types.js';
 import { LowerContext, apexName, isFlowDeclared } from '../context.js';
 import { UnsupportedConstructError, lowerValue } from '../value.js';
@@ -106,6 +109,29 @@ function lowerLookup(node: FlowNode, body: RecordBody, ctx: LowerContext): ApexS
     const singleType = declared?.provenance === 'declared'
       ? declared.type
       : sobjectType(object);
+    // The declared type and the query's object are two independently-sourced
+    // facts, and on the non-first-record path below queryInto checks them
+    // against each other. This branch returns before queryInto is ever built,
+    // so the same check has to run here — and assign() checks nothing but
+    // untypedness. Without it a Flow declaring 'TheAccount' a Contact while the
+    // lookup queries Account wrote a .cls at exit 0 that emitted
+    // `TheAccount = TheAccount_rows.get(0);` off a List<Account>, which the
+    // compiler rejects with "Illegal assignment from Account to Contact". The
+    // same mismatch without getFirstRecordOnly already refuses; the two paths
+    // must agree.
+    if (declared?.provenance === 'declared') {
+      if (singleType.kind !== 'SObject') {
+        throw new ApexTypeError(
+          `A query result is an SObject; '${target}' was declared ${renderType(singleType)}, ` +
+            `which Apex cannot assign a record to.`
+        );
+      }
+      if (singleType.name !== undefined && !sameName(singleType.name, object)) {
+        throw new ApexTypeError(
+          `'${target}' is a ${singleType.name} but the query selects FROM ${object}.`
+        );
+      }
+    }
     // Flow reads one record, so the query reads one row. Identical semantics,
     // and it keeps the temp list off the heap for a large result set.
     spec.limit = 1;

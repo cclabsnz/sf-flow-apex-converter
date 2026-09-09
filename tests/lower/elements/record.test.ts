@@ -281,6 +281,65 @@ describe('lowerRecord', () => {
     expect(c.notes.filter((n) => n.kind === 'note')).toEqual([]);
   });
 
+  it('refuses a getFirstRecordOnly lookup whose declared type is a different object', () => {
+    // The getFirstRecordOnly branch returned before queryInto was built, so the
+    // declared-type-vs-query-object check never ran and assign() checks nothing.
+    // A Flow declaring 'Found' a Contact while the lookup queries
+    // LLC_BI__Pricing_Stream__c wrote a .cls at exit 0 that the compiler then
+    // rejected: "Illegal assignment from LLC_BI__Pricing_Stream__c to Contact".
+    // The same mismatch WITHOUT the flag refuses; the two paths must agree.
+    const node = lookup();
+    if (node.body?.kind === 'record') {
+      node.body.getFirstRecordOnly = true;
+      node.body.outputReference = 'Found';
+    }
+    const c = ctx([{
+      name: 'Found', kind: 'variable', dataType: 'SObject', objectType: 'Contact',
+      isCollection: false, isInput: false, isOutput: false, sourceJson: '{}',
+    }]);
+    expect(() => lowerRecord(node, c)).toThrow(ApexTypeError);
+    // The message names both types, as the non-first-record path's does.
+    expect(() => lowerRecord(node, c)).toThrow(/Contact/);
+    expect(() => lowerRecord(node, c)).toThrow(/LLC_BI__Pricing_Stream__c/);
+  });
+
+  it('refuses a getFirstRecordOnly lookup whose declared type is not an SObject', () => {
+    const node = lookup();
+    if (node.body?.kind === 'record') {
+      node.body.getFirstRecordOnly = true;
+      node.body.outputReference = 'Found';
+    }
+    const c = ctx([{
+      name: 'Found', kind: 'variable', dataType: 'Boolean', isCollection: false,
+      isInput: false, isOutput: false, sourceJson: '{}',
+    }]);
+    expect(() => lowerRecord(node, c)).toThrow(ApexTypeError);
+  });
+
+  it('converts a getFirstRecordOnly lookup whose declared type matches the query', () => {
+    const node = lookup();
+    if (node.body?.kind === 'record') {
+      node.body.getFirstRecordOnly = true;
+      node.body.outputReference = 'Found';
+    }
+    const c = ctx([{
+      name: 'Found', kind: 'variable', dataType: 'SObject',
+      objectType: 'LLC_BI__Pricing_Stream__c', isCollection: false,
+      isInput: false, isOutput: false, sourceJson: '{}',
+    }]);
+    const out = lowerRecord(node, c).map((s) => emitStmt(s)).join('\n');
+    expect(out).toMatch(/Found = \w+\.isEmpty\(\) \? null : \w+\.get\(0\);/);
+  });
+
+  it('converts a getFirstRecordOnly lookup with no declared type at all', () => {
+    // No outputReference, so the target is element-internal and the query's
+    // object is the only fact there is — nothing to disagree with.
+    const node = lookup();
+    if (node.body?.kind === 'record') node.body.getFirstRecordOnly = true;
+    const out = lowerRecord(node, ctx()).map((s) => emitStmt(s)).join('\n');
+    expect(out).toMatch(/LLC_BI__Pricing_Stream__c Get_Streams = \w+\.isEmpty\(\)/);
+  });
+
   it('refuses a lookup whose declared outputReference type does not match the query', () => {
     const node = lookup();
     if (node.body?.kind === 'record') {
