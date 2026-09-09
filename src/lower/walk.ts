@@ -19,8 +19,22 @@ import { lowerAction, lowerSubflow } from './elements/stubs.js';
  * element that produced the invalid tree rather than at a constructor.
  */
 export function lowerElement(node: FlowNode, ctx: LowerContext): ApexStmt[] {
+  return inElement(node, () => lowerElementBody(node, ctx));
+}
+
+/**
+ * Runs `build` inside the element-name boundary.
+ *
+ * Decision and loop elements are not lowered through lowerElement — lowerFrom
+ * builds their control flow itself — so their calls into lowerConditions and the
+ * TypeSource sat OUTSIDE this boundary, and an ApexTypeError from them reached
+ * the CLI as a raw stack trace naming a constructor. Wrapping only the element's
+ * own construction, never the recursive lowerFrom calls, keeps a nested
+ * element's failure named after the nested element rather than its ancestor.
+ */
+function inElement<T>(node: FlowNode, build: () => T): T {
   try {
-    return lowerElementBody(node, ctx);
+    return build();
   } catch (error) {
     if (error instanceof ApexTypeError) {
       throw new ApexTypeError(`While lowering '${node.name}' (${node.kind}): ${error.message}`);
@@ -106,7 +120,10 @@ export function lowerFrom(
         : [];
       for (let i = rules.length - 1; i >= 0; i -= 1) {
         const rule = rules[i];
-        const condition = lowerConditions(rule.conditionLogic, rule.conditions, ctx);
+        const condition = inElement(
+          node,
+          () => lowerConditions(rule.conditionLogic, rule.conditions, ctx)
+        );
         const body = lowerFrom(cfg, rule.target, join, ctx);
         built = [ifThen(condition, body, built)];
       }
@@ -116,10 +133,11 @@ export function lowerFrom(
     }
 
     if (node.body?.kind === 'loop') {
-      const collection = node.body.collection;
-      const collectionType = ctx.types.resolve(collection).type;
+      const loopBody = node.body;
+      const collection = loopBody.collection;
+      const collectionType = inElement(node, () => ctx.types.resolve(collection).type);
       const elementType = collectionType.kind === 'List' ? collectionType.of : sobjectType();
-      const iterationVariable = node.body.iterationVariable ?? node.name;
+      const iterationVariable = loopBody.iterationVariable ?? node.name;
       const item = apexName(ctx, iterationVariable);
       // A for-each header always DECLARES its iteration variable. When the Flow
       // declares that name too (see isFlowDeclared), lowerFlow has already
@@ -130,12 +148,16 @@ export function lowerFrom(
       // each item into the declared name.
       const declaredItem = isFlowDeclared(ctx, iterationVariable);
       const cursor = declaredItem ? ctx.scope.allocate(`${item}_item`) : item;
-      const copy: ApexStmt[] = declaredItem
-        ? [assign(item, variable(elementType, cursor))]
-        : [];
-      const body = lowerFrom(cfg, node.body.bodyTarget, current, ctx);
-      out.push(forEach(elementType, cursor, apexName(ctx, collection), [...copy, ...body]));
-      current = node.body.afterTarget;
+      const copy: ApexStmt[] = inElement(
+        node,
+        () => (declaredItem ? [assign(item, variable(elementType, cursor))] : [])
+      );
+      const body = lowerFrom(cfg, loopBody.bodyTarget, current, ctx);
+      out.push(inElement(
+        node,
+        () => forEach(elementType, cursor, apexName(ctx, collection), [...copy, ...body])
+      ));
+      current = loopBody.afterTarget;
       continue;
     }
 

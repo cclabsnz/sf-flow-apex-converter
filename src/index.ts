@@ -6,9 +6,8 @@ import * as path from 'path';
 import { SimplifiedFlowAnalyzer } from './utils/SimplifiedFlowAnalyzer.js';
 import { BulkifiedApexGenerator } from './utils/BulkifiedApexGenerator.js';
 import { Logger, LogLevel } from './utils/Logger.js';
-import { LoweringRefusal } from './lower/context.js';
+import { conversionFailureLines } from './lower/failure.js';
 import { lowerFlow } from './lower/lowerFlow.js';
-import { UnsupportedConstructError } from './lower/value.js';
 
 const program = new Command();
 
@@ -146,25 +145,15 @@ program
         console.log(`  ${manifest.stubs.length} construct(s) stubbed — the class compiles but throws if reached`);
       }
     } catch (error) {
-      if (error instanceof LoweringRefusal) {
-        // No .cls is written. Half a class whose control flow was guessed is
-        // worse than none.
-        console.error('Cannot convert this Flow:');
-        for (const p of error.problems) console.error(`  - ${p}`);
-        process.exitCode = 1;
-        return;
-      }
-      if (error instanceof UnsupportedConstructError) {
-        // Distinct from LoweringRefusal (a whole-graph structural failure):
-        // this is one construct — e.g. a subflow reference this converter
-        // cannot represent — but from the CLI's perspective the outcome is
-        // identical. No .cls is written either way.
-        console.error('Cannot convert this Flow:');
-        console.error(`  - ${error.message}`);
-        process.exitCode = 1;
-        return;
-      }
-      throw error;
+      // No .cls is written. Half a class whose control flow was guessed is
+      // worse than none. conversionFailureLines decides which errors are a
+      // conversion failure the user can act on; anything else is a bug in this
+      // converter and must still crash rather than be dressed up as a refusal.
+      const lines = conversionFailureLines(error);
+      if (lines === undefined) throw error;
+      console.error('Cannot convert this Flow:');
+      for (const line of lines) console.error(`  - ${line}`);
+      process.exitCode = 1;
     }
   });
 
