@@ -2,7 +2,7 @@ import { emitStmt } from '../../src/apex/emit.js';
 import { Scope } from '../../src/apex/scope.js';
 import { FlowDeclaration, FlowIR, FlowNode } from '../../src/ir/types.js';
 import { buildCfg } from '../../src/lower/cfg.js';
-import { LowerContext } from '../../src/lower/context.js';
+import { LowerContext, LoweringRefusal } from '../../src/lower/context.js';
 import { declarationTypeSource } from '../../src/lower/typeSource.js';
 import { lowerFrom } from '../../src/lower/walk.js';
 
@@ -136,5 +136,101 @@ describe('lowerFrom', () => {
     expect(out).toContain('try {');
     expect(out).toContain('} catch (Exception e) {');
     expect(out).toContain("z = 'x';");
+    // The element's own statement must be INSIDE the try. Asserting only that the
+    // output contains 'try {' passes even when the try body is empty.
+    expect(out.indexOf("x = 'x';")).toBeGreaterThan(out.indexOf('try {'));
+    expect(out.indexOf("x = 'x';")).toBeLessThan(out.indexOf('} catch'));
+    expect(out.indexOf("z = 'x';")).toBeGreaterThan(out.indexOf('} catch'));
+  });
+
+  it('refuses a decision element with a fault connector rather than dropping it', () => {
+    const base = decision('D', 'T', 'F');
+    const withFault: FlowNode = {
+      ...base,
+      connectors: [...base.connectors, { target: 'Err', isFault: true }],
+    };
+    const flow = ir([
+      withFault,
+      assignNode('T', undefined, 'x'),
+      assignNode('F', undefined, 'y'),
+      assignNode('Err', undefined, 'z'),
+    ], 'D');
+    flow.declarations = [decl('x'), decl('y'), decl('z'), decl('flag')];
+    expect(() => lowerFrom(buildCfg(flow), 'D', undefined, makeCtx(flow)))
+      .toThrow(LoweringRefusal);
+  });
+
+  it('refuses a loop element with a fault connector rather than dropping it', () => {
+    const base = loop('L', 'B', 'A');
+    const withFault: FlowNode = {
+      ...base,
+      connectors: [...base.connectors, { target: 'Err', isFault: true }],
+    };
+    const flow = ir([
+      withFault,
+      assignNode('B', 'L', 'x'),
+      assignNode('A', undefined, 'y'),
+      assignNode('Err', undefined, 'z'),
+    ], 'L');
+    flow.declarations = [
+      decl('x'), decl('y'), decl('z'),
+      { name: 'items', kind: 'variable', dataType: 'SObject', objectType: 'Account',
+        isCollection: true, isInput: false, isOutput: false, sourceJson: '{}' },
+    ];
+    expect(() => lowerFrom(buildCfg(flow), 'L', undefined, makeCtx(flow)))
+      .toThrow(LoweringRefusal);
+  });
+
+  it('builds a multi-rule decision back to front: rule 1 outermost, rule 3 innermost, default last', () => {
+    const cond = (field: string) => (
+      [{ left: field, operator: 'IsNull', right: { kind: 'boolean' as const, raw: 'false' } }]
+    );
+    const multiRule: FlowNode = node('D', {
+      kind: 'decisions',
+      connectors: [
+        { target: 'R1', isFault: false },
+        { target: 'R2', isFault: false },
+        { target: 'R3', isFault: false },
+        { target: 'DEF', isFault: false },
+      ],
+      body: {
+        kind: 'decision',
+        rules: [
+          { name: 'r1', conditionLogic: 'and', conditions: cond('a'), target: 'R1' },
+          { name: 'r2', conditionLogic: 'and', conditions: cond('b'), target: 'R2' },
+          { name: 'r3', conditionLogic: 'and', conditions: cond('c'), target: 'R3' },
+        ],
+        defaultTarget: 'DEF',
+      },
+    });
+    const flow = ir([
+      multiRule,
+      assignNode('R1', 'J', 'r1out'),
+      assignNode('R2', 'J', 'r2out'),
+      assignNode('R3', 'J', 'r3out'),
+      assignNode('DEF', 'J', 'defout'),
+      assignNode('J', undefined, 'j'),
+    ], 'D');
+    flow.declarations = [
+      decl('r1out'), decl('r2out'), decl('r3out'), decl('defout'), decl('j'),
+      decl('a'), decl('b'), decl('c'),
+    ];
+    const out = lowerFrom(buildCfg(flow), 'D', undefined, makeCtx(flow))
+      .map((s) => emitStmt(s)).join('\n');
+
+    const iR1 = out.indexOf("r1out = 'x';");
+    const iR2 = out.indexOf("r2out = 'x';");
+    const iR3 = out.indexOf("r3out = 'x';");
+    const iDef = out.indexOf("defout = 'x';");
+    expect(iR1).toBeGreaterThanOrEqual(0);
+    expect(iR2).toBeGreaterThanOrEqual(0);
+    expect(iR3).toBeGreaterThanOrEqual(0);
+    expect(iDef).toBeGreaterThanOrEqual(0);
+    // Nested if/else-if/else in Flow's own rule order: rule 1's statement is
+    // emitted first (outermost if body), rule 3's last among the rules
+    // (innermost else-if body), and the default after all of them.
+    expect(iR1).toBeLessThan(iR2);
+    expect(iR2).toBeLessThan(iR3);
+    expect(iR3).toBeLessThan(iDef);
   });
 });

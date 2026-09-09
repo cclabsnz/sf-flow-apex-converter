@@ -83,6 +83,16 @@ export function lowerFrom(
     const node = cfg.node(current);
     if (!node) break;
 
+    // cfg emits fault edges for every node kind, and the IR collects faultConnector
+    // generically, but only the generic branch below wraps them in try/catch. A
+    // decision or loop carrying one would have its fault path silently dropped.
+    if ((node.body?.kind === 'decision' || node.body?.kind === 'loop') && faultTarget(node)) {
+      throw new LoweringRefusal([
+        `${node.name} is a ${node.body.kind} element with a fault connector, which this ` +
+          `milestone does not lower. Refusing rather than dropping the fault path.`,
+      ]);
+    }
+
     if (node.body?.kind === 'decision') {
       const join = immediatePostDominator(cfg, current);
 
