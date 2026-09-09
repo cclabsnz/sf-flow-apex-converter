@@ -3,7 +3,7 @@ import { ApexStmt, assign, forEach, ifThen, tryCatch } from '../apex/stmt.js';
 import { variable } from '../apex/expr.js';
 import { sobjectType } from '../apex/types.js';
 import { FlowNode } from '../ir/types.js';
-import { Cfg, immediatePostDominator } from './cfg.js';
+import { Cfg, immediatePostDominator, postDominators } from './cfg.js';
 import { LowerContext, LoweringRefusal, apexName, isFlowDeclared } from './context.js';
 import { lowerConditions } from './condition.js';
 import { lowerAssignment } from './elements/assignment.js';
@@ -68,6 +68,63 @@ function lowerElementBody(node: FlowNode, ctx: LowerContext): ApexStmt[] {
 /** The fault target of an element, if it declares one. */
 function faultTarget(node: FlowNode): string | undefined {
   return node.connectors.find((c) => c.isFault)?.target;
+}
+
+/** Whether every path out of `from` passes through `through`. */
+function postDominates(cfg: Cfg, through: string, from: string): boolean {
+  return postDominators(cfg).get(from)?.has(through) === true;
+}
+
+/**
+ * The join where an element's success and fault paths reconverge, guaranteed to
+ * be a node the CURRENT walk would itself have stopped at.
+ *
+ * The C4 fix computed this as `immediatePostDominator(cfg, current)` and handed
+ * it to both arms, on the premise that "the join can never be past stopAt:
+ * if stopAt post-dominates this node then the NEAREST post-dominator is at or
+ * before it". The conclusion is sound; the premise is not always true. A fault
+ * edge out of a LOOP BODY bypasses the back-edge, so the loop element does not
+ * post-dominate the faulting element — and then the computed join is either
+ * undefined (the fault path ends the Flow) or a node past the loop. Either way
+ * it REPLACED the loop's own stop, and since the success successor is the
+ * back-edge, lowerFrom re-entered the loop element with a fresh `guard` set and
+ * recursed until the stack blew: `RangeError: Maximum call stack size exceeded`
+ * on two otherwise ordinary Flows.
+ *
+ * So the premise is checked rather than assumed. When it holds, the join is at
+ * or before `stopAt` and both arms are finite. When it does not, the fault path
+ * escapes the enclosing block, and reproducing it needs an early exit — a
+ * `break` out of the for-each, or a `return` — that this milestone's AST cannot
+ * express. Clamping to `stopAt` instead would compile and be wrong: the loop
+ * would carry on iterating after a fault that ends the Flow, and the code after
+ * the loop would be emitted both inside the catch and again after it. This
+ * refuses instead.
+ */
+function faultJoin(
+  cfg: Cfg,
+  node: FlowNode,
+  current: string,
+  stopAt: string | undefined
+): string | undefined {
+  const join = immediatePostDominator(cfg, current);
+  // No enclosing block to escape: an undefined join simply walks each arm to
+  // the end of the Flow, which is exactly what a fault path ending the Flow
+  // means at the method's top level.
+  if (stopAt === undefined) return join;
+  // Reaching the enclosing stop itself is inside the region by definition —
+  // both arms stop there, and the walk resumes from it.
+  if (join === stopAt) return stopAt;
+  if (postDominates(cfg, stopAt, current)) return join ?? stopAt;
+  throw new LoweringRefusal([
+    `${node.name} has a fault connector whose fault path leaves the block that encloses it: ` +
+      (join === undefined
+        ? `the success and fault paths never rejoin inside the block ending at '${stopAt}'. `
+        : `the success and fault paths rejoin at '${join}', outside the block ending at ` +
+          `'${stopAt}'. `) +
+      `Reproducing that needs an early exit from that block — a break out of the loop, or a ` +
+      `return — which this milestone does not emit. Refusing rather than emitting code that ` +
+      `carries on inside the block after the fault.`,
+  ]);
 }
 
 /**
@@ -175,10 +232,10 @@ export function lowerFrom(
       // C is the join of the two paths. The fault edge is in the CFG, so
       // immediatePostDominator sees both and returns exactly that join; it is
       // undefined when the paths never reconverge, which walks each to the end
-      // inside its own arm. The join can never be past `stopAt`: if stopAt
-      // post-dominates this node then the NEAREST post-dominator is at or before
-      // it, so the branch cannot outrun its enclosing stop.
-      const join = immediatePostDominator(cfg, current);
+      // inside its own arm. faultJoin adds the part C4 assumed rather than
+      // checked: the join it returns is always a node THIS walk would itself
+      // have stopped at, so neither arm can outrun the enclosing stop.
+      const join = faultJoin(cfg, node, current, stopAt);
       out.push(tryCatch(
         [...own, ...lowerFrom(cfg, success, join, ctx)],
         'e',
