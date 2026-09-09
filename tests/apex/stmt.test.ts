@@ -1,7 +1,9 @@
 import { ApexTypeError } from '../../src/apex/errors.js';
 import { comparison, literal, methodCall, variable } from '../../src/apex/expr.js';
 import { soql } from '../../src/apex/soql.js';
-import { assign, declare, ifThen, invoke, memberWrite, queryInto } from '../../src/apex/stmt.js';
+import {
+  assign, declare, ifThen, invoke, memberWrite, queryInto, throwStmt,
+} from '../../src/apex/stmt.js';
 import { emitStmt } from '../../src/apex/emit.js';
 import {
   BOOLEAN, DATE, DATETIME, DECIMAL, ID, INTEGER, OBJECT, STRING, listOf, sobjectType,
@@ -137,5 +139,12 @@ describe('invoke', () => {
     expect(() => invoke(comparison(variable(DECIMAL, 'amount'), '>', literal(DECIMAL, '1000'))))
       .toThrow(ApexTypeError);
     expect(() => invoke(variable(STRING, 'name'))).toThrow(ApexTypeError);
+  });
+});
+
+describe('throwStmt', () => {
+  it('emits a throw with an escaped message', () => {
+    expect(emitStmt(throwStmt("Formula isn't translated")))
+      .toBe("throw new UnsupportedOperationException('Formula isn\\'t translated');");
   });
 });

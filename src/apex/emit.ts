@@ -59,6 +59,8 @@ export function emitExpr(e: ApexExpr): string {
       return `${operand(e.operand, e)} ${e.negated ? '!=' : '=='} null`;
     case 'methodCall':
       return `${operand(e.target, e)}.${e.method}(${e.args.map(emitExpr).join(', ')})`;
+    case 'staticCall':
+      return `${e.name}(${e.args.map(emitExpr).join(', ')})`;
     case 'construct':
       return `new ${renderType(e.type)}(${e.args.map(emitExpr).join(', ')})`;
   }
@@ -112,5 +114,7 @@ export function emitStmt(s: ApexStmt, depth = 0): string {
       const call = `Database.${s.operation}(${s.collection}, AccessLevel.USER_MODE);`;
       return `${pad}if (!${s.collection}.isEmpty()) {\n${pad}${INDENT}${call}\n${pad}}`;
     }
+    case 'throwStmt':
+      return `${pad}throw new UnsupportedOperationException(${emitExpr(s.message)});`;
   }
 }
