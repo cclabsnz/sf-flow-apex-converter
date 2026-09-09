@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        A small, deliberately WITHIN-LIMIT Flow: it converts end to end rather
+        than refusing, so the pipeline can be inspected as a whole.
+
+        exampleflow.xml correctly refuses (two of its subflow names exceed
+        Apex's 40-character class-name limit, and it has per-field
+        outputAssignments), which left nothing converting a Flow end to end.
+        This fixture restores that coverage. It exercises, in one pass: an
+        input parameter, a Get Records, a loop, a decision, a field write onto
+        the loop variable, a collection append, an output variable, a formula
+        stub, and string values containing apostrophes.
+    -->
+    <apiVersion>58.0</apiVersion>
+    <label>Flag Overdue Loans</label>
+    <interviewLabel>Flag Overdue Loans</interviewLabel>
+    <processType>AutoLaunchedFlow</processType>
+    <status>Active</status>
+    <runInMode>DefaultMode</runInMode>
+
+    <start>
+        <connector>
+            <targetReference>Get_Accounts</targetReference>
+        </connector>
+    </start>
+
+    <recordLookups>
+        <name>Get_Accounts</name>
+        <label>Get Accounts</label>
+        <object>Account</object>
+        <filterLogic>and</filterLogic>
+        <filters>
+            <field>Id</field>
+            <operator>In</operator>
+            <value>
+                <elementReference>AccountIds</elementReference>
+            </value>
+        </filters>
+        <queriedFields>Id</queriedFields>
+        <queriedFields>Name</queriedFields>
+        <getFirstRecordOnly>false</getFirstRecordOnly>
+        <storeOutputAutomatically>false</storeOutputAutomatically>
+        <outputReference>FoundAccounts</outputReference>
+        <assignNullValuesIfNoRecordsFound>true</assignNullValuesIfNoRecordsFound>
+        <connector>
+            <targetReference>Loop_Accounts</targetReference>
+        </connector>
+    </recordLookups>
+
+    <loops>
+        <name>Loop_Accounts</name>
+        <label>Loop Accounts</label>
+        <collectionReference>FoundAccounts</collectionReference>
+        <assignNextValueToReference>CurrentAccount</assignNextValueToReference>
+        <iterationOrder>Asc</iterationOrder>
+        <nextValueConnector>
+            <targetReference>Check_Name</targetReference>
+        </nextValueConnector>
+        <noMoreValuesConnector>
+            <targetReference>Finish</targetReference>
+        </noMoreValuesConnector>
+    </loops>
+
+    <decisions>
+        <name>Check_Name</name>
+        <label>Check Name</label>
+        <defaultConnectorLabel>Leave Alone</defaultConnectorLabel>
+        <defaultConnector>
+            <targetReference>Loop_Accounts</targetReference>
+        </defaultConnector>
+        <rules>
+            <name>Is_Overdue</name>
+            <label>Is Overdue</label>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>CurrentAccount.Name</leftValueReference>
+                <operator>EqualTo</operator>
+                <rightValue>
+                    <stringValue>O'Brien &amp; Sons</stringValue>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>Flag_Account</targetReference>
+            </connector>
+        </rules>
+    </decisions>
+
+    <assignments>
+        <name>Flag_Account</name>
+        <label>Flag Account</label>
+        <assignmentItems>
+            <assignToReference>CurrentAccount.Description</assignToReference>
+            <operator>Assign</operator>
+            <value>
+                <stringValue>Flagged: it's overdue</stringValue>
+            </value>
+        </assignmentItems>
+        <assignmentItems>
+            <assignToReference>Messages</assignToReference>
+            <operator>Add</operator>
+            <value>
+                <elementReference>OVERDUE_NOTE</elementReference>
+            </value>
+        </assignmentItems>
+        <connector>
+            <targetReference>Loop_Accounts</targetReference>
+        </connector>
+    </assignments>
+
+    <assignments>
+        <name>Finish</name>
+        <label>Finish</label>
+        <assignmentItems>
+            <assignToReference>Summary</assignToReference>
+            <operator>Assign</operator>
+            <value>
+                <elementReference>SummaryText</elementReference>
+            </value>
+        </assignmentItems>
+    </assignments>
+
+    <variables>
+        <name>AccountIds</name>
+        <dataType>String</dataType>
+        <isCollection>true</isCollection>
+        <isInput>true</isInput>
+        <isOutput>false</isOutput>
+    </variables>
+
+    <variables>
+        <name>FoundAccounts</name>
+        <dataType>SObject</dataType>
+        <objectType>Account</objectType>
+        <isCollection>true</isCollection>
+        <isInput>false</isInput>
+        <isOutput>false</isOutput>
+    </variables>
+
+    <variables>
+        <name>CurrentAccount</name>
+        <dataType>SObject</dataType>
+        <objectType>Account</objectType>
+        <isCollection>false</isCollection>
+        <isInput>false</isInput>
+        <isOutput>false</isOutput>
+    </variables>
+
+    <variables>
+        <name>Messages</name>
+        <dataType>String</dataType>
+        <isCollection>true</isCollection>
+        <isInput>false</isInput>
+        <isOutput>true</isOutput>
+    </variables>
+
+    <variables>
+        <name>Summary</name>
+        <dataType>String</dataType>
+        <isCollection>false</isCollection>
+        <isInput>false</isInput>
+        <isOutput>true</isOutput>
+    </variables>
+
+    <constants>
+        <name>OVERDUE_NOTE</name>
+        <dataType>String</dataType>
+        <value>
+            <stringValue>O'Brien's account is overdue</stringValue>
+        </value>
+    </constants>
+
+    <formulas>
+        <name>SummaryText</name>
+        <dataType>String</dataType>
+        <expression>TEXT({!Messages}) &amp; ' account(s) flagged'</expression>
+    </formulas>
+</Flow>
