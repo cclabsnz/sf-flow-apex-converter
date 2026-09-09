@@ -93,7 +93,7 @@ export function emitStmt(s: ApexStmt, depth = 0): string {
     case 'memberWrite':
       return `${pad}${s.target}.${s.member} = ${emitExpr(s.value)};`;
     case 'collectInto':
-      return `${pad}${s.collection}.add(${s.record});`;
+      return `${pad}${s.collection}.${s.addAll ? 'addAll' : 'add'}(${s.record});`;
     case 'invoke':
       return `${pad}${emitExpr(s.call)};`;
     case 'queryInto': {

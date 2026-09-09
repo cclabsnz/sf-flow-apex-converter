@@ -230,6 +230,37 @@ describe('lowerFlow', () => {
     expect(result.source).toContain('List<Account> Accts = [');
   });
 
+  it('does not re-declare a collection processor\'s iteration variable that is also a Flow declaration', () => {
+    // Flow Builder declares a "currentItem_X" variable for a Filter/Sort/Map
+    // element's iteration variable the same way it declares any other
+    // variable, so it shows up in ir.declarations too. lowerCollectionProcessor
+    // already emits it as the forEach loop's own iteration variable
+    // (`for (T item : ...)` declares it) — pre-declaring the same name again
+    // as a plain top-level local produces "Duplicate variable", confirmed by
+    // the real compiler, not just a guess about Apex scoping rules.
+    const ir = flow({
+      declarations: [
+        { name: 'Items', kind: 'variable', dataType: 'SObject', objectType: 'Account',
+          isCollection: true, isInput: true, isOutput: false, sourceJson: '{}' },
+        { name: 'currentItem_Filter', kind: 'variable', dataType: 'SObject', objectType: 'Account',
+          isCollection: false, isInput: false, isOutput: false, sourceJson: '{}' },
+      ],
+      nodes: [{
+        name: 'Filter', kind: 'collectionprocessors', connectors: [], sourceJson: '{}', raw: {},
+        body: {
+          kind: 'collectionProcessor', collection: 'Items', processorType: 'FilterCollectionProcessor',
+          conditionLogic: 'and',
+          conditions: [{ left: 'currentItem_Filter.Name', operator: 'IsNull', right: { kind: 'boolean', raw: 'false' } }],
+          assignNextValueToReference: 'currentItem_Filter',
+        },
+      }],
+      start: { triggerKind: 'autolaunched', connector: { target: 'Filter', isFault: false }, sourceJson: '{}' },
+    });
+    const result = lowerFlow(ir);
+    expect(result.source.match(/Account currentItem_Filter/g)).toHaveLength(1);
+    expect(result.source).toContain('for (Account currentItem_Filter : Items)');
+  });
+
   it('refuses a Get Records outputReference that collides with an input parameter', () => {
     // The element would redeclare a parameter, which Apex also rejects.
     const ir = flow({

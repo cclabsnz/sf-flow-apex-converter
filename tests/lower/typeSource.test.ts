@@ -28,6 +28,23 @@ describe('flowTypeToApex', () => {
   it('wraps a collection in a List', () => {
     expect(flowTypeToApex('SObject', 'Account', true)).toEqual(listOf(sobjectType('Account')));
   });
+
+  it('maps an Apex-defined type to its class name, not to String', () => {
+    // dataType 'Apex' carries the class in <apexClass>, not <objectType> — a
+    // Flow variable typed this way (e.g. an invocable's request/response
+    // wrapper) has no <objectType> at all. Falling through to the String
+    // default here means every field write on it (`msg.Message = x;`) is a
+    // compile error against a real class: String has no such member.
+    expect(flowTypeToApex('Apex', undefined, false, 'ValidationMessage')).toEqual(
+      sobjectType('ValidationMessage')
+    );
+  });
+
+  it('wraps a collection of an Apex-defined type in a List of that type', () => {
+    expect(flowTypeToApex('Apex', undefined, true, 'ValidationMessage')).toEqual(
+      listOf(sobjectType('ValidationMessage'))
+    );
+  });
 });
 
 describe('declarationTypeSource', () => {

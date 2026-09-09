@@ -1,7 +1,7 @@
 import { ApexMethod } from '../../apex/class.js';
 import { ApexExpr, methodCall, staticCall, variable } from '../../apex/expr.js';
 import { RESERVED } from '../../apex/scope.js';
-import { ApexStmt, invoke, throwStmt } from '../../apex/stmt.js';
+import { ApexStmt, declare, invoke, throwStmt } from '../../apex/stmt.js';
 import { ApexType, BOOLEAN, sobjectType } from '../../apex/types.js';
 import { FlowDeclaration, FlowNode } from '../../ir/types.js';
 import { LowerContext, apexName } from '../context.js';
@@ -50,7 +50,7 @@ export function formulaStub(declaration: FlowDeclaration, ctx: LowerContext): st
   const expression = declaration.expression ?? '';
   const method = throwingStub(
     name,
-    flowTypeToApex(declaration.dataType, declaration.objectType, declaration.isCollection),
+    flowTypeToApex(declaration.dataType, declaration.objectType, declaration.isCollection, declaration.apexClass),
     [
       `TODO: Flow formula '${declaration.name}' is not translated.`,
       `Flow expression: ${expression}`,
@@ -72,13 +72,29 @@ export function formulaStub(declaration: FlowDeclaration, ctx: LowerContext): st
  */
 export function lowerFormula(declaration: FlowDeclaration, ctx: LowerContext): ApexExpr {
   const bare = BARE_REFERENCE.exec((declaration.expression ?? '').trim());
-  if (bare) return lowerReference(bare[1], ctx);
+  if (bare) {
+    const referenced = lowerReference(bare[1], ctx);
+    // The formula's own <dataType> is Flow metadata, guaranteed consistent with
+    // its expression by the Flow it came from. The field it reads may resolve
+    // to a heuristic guess (declarationTypeSource has no describe to check
+    // against), and that guess can disagree with the formula's declared type —
+    // e.g. a field named without an is/has/flag prefix guessed as String, for
+    // a formula declared Boolean. The declared type wins: it is not a guess,
+    // and a mismatch here would make every use of the formula fail to compile
+    // (`formula == true` comparing String with Boolean).
+    const declaredType = flowTypeToApex(
+      declaration.dataType, declaration.objectType, declaration.isCollection, declaration.apexClass
+    );
+    return referenced.type.kind === declaredType.kind
+      ? referenced
+      : { ...referenced, type: declaredType };
+  }
 
   const name = formulaStub(declaration, ctx);
   return staticCall(
     name,
     [],
-    flowTypeToApex(declaration.dataType, declaration.objectType, declaration.isCollection)
+    flowTypeToApex(declaration.dataType, declaration.objectType, declaration.isCollection, declaration.apexClass)
   );
 }
 
@@ -133,5 +149,23 @@ export function lowerAction(node: FlowNode, ctx: LowerContext): ApexStmt[] {
   ctx.stubs.set(name, method);
   ctx.notes.push({ kind: 'stub', detail: `action ${body.actionName} (${body.actionType})` });
 
-  return [invoke(staticCall(name, [], BOOLEAN))];
+  const statements: ApexStmt[] = [];
+  if (body.storeOutputAutomatically) {
+    // Flow lets any later element reference this action call by its own
+    // element name, exactly as if it were a declared variable — a common
+    // shape for an ID-returning invocable feeding a subsequent Get Records
+    // filter. apexName() only allocates a renamed identifier; nothing declares
+    // it. Without this, that later reference is 'Variable does not exist' at
+    // compile time. The response wrapper's real shape is invisible to this
+    // milestone (see the stub above), so the declared type is a guess like any
+    // other unresolved reference — flagged, not invented as a collection or a
+    // concrete class no describe confirmed.
+    const resolved = ctx.types.resolve(node.name);
+    if (resolved.provenance === 'heuristic') {
+      ctx.notes.push({ kind: 'guess', detail: resolved.note });
+    }
+    statements.push(declare(resolved.type, apexName(ctx, node.name), null));
+  }
+  statements.push(invoke(staticCall(name, [], BOOLEAN)));
+  return statements;
 }

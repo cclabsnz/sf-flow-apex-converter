@@ -3,7 +3,7 @@ import { Scope } from '../apex/scope.js';
 import { construct, variable } from '../apex/expr.js';
 import { ApexStmt, declare, memberWrite, returnStmt } from '../apex/stmt.js';
 import { ApexType, sobjectType } from '../apex/types.js';
-import { FlowDeclaration, FlowIR, RecordBody } from '../ir/types.js';
+import { FlowDeclaration, FlowIR } from '../ir/types.js';
 import { buildCfg, checkStructure } from './cfg.js';
 import { LowerContext, LoweringRefusal, apexName } from './context.js';
 import { lowerFormula } from './elements/stubs.js';
@@ -75,20 +75,38 @@ export function lowerFlow(ir: FlowIR): LoweredFlow {
   const locals: ApexStmt[] = [];
   const outputs: { declaration: FlowDeclaration; type: ApexType; name: string }[] = [];
 
-  // A record lookup emits its own `List<T> name = [...]` (see lowerLookup in
-  // elements/record.ts), so pre-declaring the same name below produces
-  // "Variable already defined" and the class will not deploy. Those names are
-  // the element's to declare, not lowerFlow's.
+  // Some elements declare their own local as part of lowering, and Flow Builder
+  // still lists that same name in <variables> (or as a formula's implicit
+  // dependency), so it also appears in ir.declarations:
+  //   - a record lookup emits its own `List<T> name = [...]` for its
+  //     outputReference (see lowerLookup in elements/record.ts);
+  //   - a collection processor's `for (T item : ...)` declares its
+  //     assignNextValueToReference (see lowerCollectionProcessor);
+  //   - a loop's `for (T item : ...)` declares its iterationVariable
+  //     (see lowerFrom in walk.ts).
+  // Pre-declaring the same name again below produces "Duplicate variable" —
+  // confirmed by the real compiler, not just a guess about Apex scoping —
+  // and the class will not deploy. Those names are the element's to declare,
+  // not lowerFlow's.
   const declaredByElement = new Set(
     ir.nodes
-      .filter((n) => n.kind === 'recordlookups' && n.body?.kind === 'record')
-      .map((n) => (n.body as RecordBody).outputReference)
-      .filter((name): name is string => name !== undefined)
+      .flatMap((n): string[] => {
+        if (n.kind === 'recordlookups' && n.body?.kind === 'record') {
+          return n.body.outputReference ? [n.body.outputReference] : [];
+        }
+        if (n.body?.kind === 'collectionProcessor') {
+          return n.body.assignNextValueToReference ? [n.body.assignNextValueToReference] : [];
+        }
+        if (n.body?.kind === 'loop') {
+          return n.body.iterationVariable ? [n.body.iterationVariable] : [];
+        }
+        return [];
+      })
       .map((name) => name.toLowerCase())
   );
 
   for (const d of ir.declarations) {
-    const type = flowTypeToApex(d.dataType, d.objectType, d.isCollection);
+    const type = flowTypeToApex(d.dataType, d.objectType, d.isCollection, d.apexClass);
     const name = apexName(ctx, d.name);
 
     if (d.kind === 'formula') {

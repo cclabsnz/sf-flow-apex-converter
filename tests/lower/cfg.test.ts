@@ -100,6 +100,19 @@ describe('immediatePostDominator', () => {
     expect(immediatePostDominator(cfg, 'D')).not.toBe('A');
   });
 
+  it('finds the join inside a loop that has no afterTarget', () => {
+    // A loop with no "after last" connector never adds a node with zero real
+    // successors to the live graph: the loop body cycles back into the loop
+    // forever, and there is nothing else after it. Without a virtual exit for
+    // that implicit termination, the O(n^2) fixpoint never shrinks below "all
+    // nodes reachable", and immediatePostDominator returns whichever node
+    // happens to be first in declaration order instead of the loop itself —
+    // which is why the loop node is declared last here, not first.
+    const cfg = buildCfg(ir(
+      [plain('A', 'L'), plain('B', 'L'), decision('D', 'A', 'B'), loop('L', 'D')], 'L'));
+    expect(immediatePostDominator(cfg, 'D')).toBe('L');
+  });
+
   it('picks the nearest join when several nodes post-dominate', () => {
     // pdom(D) = {D, J, K}: both J and K are candidates, and only the selection
     // rule distinguishes them. Without this, swapping .every for .some in

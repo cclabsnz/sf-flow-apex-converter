@@ -1,6 +1,7 @@
 import { emitClass } from '../../../src/apex/class.js';
 import { emitStmt } from '../../../src/apex/emit.js';
 import { Scope } from '../../../src/apex/scope.js';
+import { BOOLEAN } from '../../../src/apex/types.js';
 import { FlowDeclaration, FlowIR, FlowNode } from '../../../src/ir/types.js';
 import { LowerContext } from '../../../src/lower/context.js';
 import { declarationTypeSource } from '../../../src/lower/typeSource.js';
@@ -31,6 +32,19 @@ describe('lowerFormula', () => {
     const expr = lowerFormula(c.ir.declarations[0], c);
     expect(c.stubs.size).toBe(0);
     expect(expr.node).toBe('fieldRead');
+  });
+
+  it('trusts the formula\'s own declared dataType over a heuristic guess for the field it reads', () => {
+    // NC_Skip_Pricing__c matches no naming heuristic (no is/has/flag prefix), so
+    // the field itself resolves to a guessed String. The formula's own
+    // <dataType>Boolean</dataType> is Flow metadata, not a guess, and it must
+    // win — otherwise `formula == true` compares String with Boolean and the
+    // generated class fails to compile.
+    const c = ctx([formula('skip', '{!Acct.NC_Skip_Pricing__c}'),
+      { name: 'Acct', kind: 'variable', dataType: 'SObject', objectType: 'Account',
+        isCollection: false, isInput: false, isOutput: false, sourceJson: '{}' }]);
+    const expr = lowerFormula(c.ir.declarations[0], c);
+    expect(expr.type).toEqual(BOOLEAN);
   });
 
   it('stubs a formula containing a function', () => {
@@ -164,5 +178,33 @@ describe('lowerAction', () => {
     expect(doc).toContain('GetIdsFromRecords');
     // dataTypeMappings carry the concrete type argument; it exists nowhere else.
     expect(doc).toContain('LLC_BI__Loan__c');
+  });
+
+  it('declares a local for an auto-stored output, so a later reference to it compiles', () => {
+    // storeOutputAutomatically means Flow lets any later element reference this
+    // action call by its own name (e.g. a Get Records filter's IN bind) exactly
+    // as if it were a declared variable — a real production Flow does this to
+    // feed an ID-returning invocable's result into a subsequent query. Without
+    // a declaration here, that later reference is 'Variable does not exist' at
+    // compile time: apexName() only allocates a renamed identifier, it does not
+    // by itself make any statement declare it.
+    const node: FlowNode = {
+      name: 'Get_Ids', kind: 'actioncalls', connectors: [], sourceJson: '{}', raw: {},
+      body: { kind: 'action', actionName: 'GetIdsFromRecords', actionType: 'apex',
+        inputs: [], outputs: [], storeOutputAutomatically: true, dataTypeMappings: [] },
+    };
+    const c = ctx();
+    const out = lowerAction(node, c).map((s) => emitStmt(s));
+    expect(out.some((line) => /^\s*String\s+Get_Ids\s*;\s*$/.test(line))).toBe(true);
+  });
+
+  it('declares nothing extra when the action does not auto-store its output', () => {
+    const node: FlowNode = {
+      name: 'Do_Thing', kind: 'actioncalls', connectors: [], sourceJson: '{}', raw: {},
+      body: { kind: 'action', actionName: 'DoThing', actionType: 'apex',
+        inputs: [], outputs: [], storeOutputAutomatically: false, dataTypeMappings: [] },
+    };
+    const c = ctx();
+    expect(lowerAction(node, c)).toHaveLength(1);
   });
 });

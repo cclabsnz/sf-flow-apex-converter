@@ -82,7 +82,15 @@ function lowerItem(item: FlowAssignmentItem, ctx: LowerContext): ApexStmt {
           `'${item.operator}' on '${item.target}' needs a variable to add.`
         );
       }
-      return collectInto(apexName(ctx, item.target), apexName(ctx, item.value.raw));
+      // Flow's own documented behaviour for Add: when the value is itself a
+      // collection, Add appends every element of it rather than the
+      // collection as a single item. Apex's List.add(T) takes one element, so
+      // emitting .add() here for a collection value would compile only for a
+      // List<List<T>> target — the wrong shape entirely, and a defect the
+      // compiler catches immediately for the common case of merging two
+      // message lists.
+      const valueIsCollection = ctx.types.resolve(item.value.raw).type.kind === 'List';
+      return collectInto(apexName(ctx, item.target), apexName(ctx, item.value.raw), valueIsCollection);
     }
 
     case 'RemoveAll': {
