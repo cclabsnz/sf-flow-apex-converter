@@ -1,3 +1,4 @@
+import { construct } from '../../apex/expr.js';
 import { ApexStmt, collectInto, declare, forEach, ifThen } from '../../apex/stmt.js';
 import { listOf, sobjectType } from '../../apex/types.js';
 import { FlowNode } from '../../ir/types.js';
@@ -34,7 +35,7 @@ export function lowerCollectionProcessor(node: FlowNode, ctx: LowerContext): Ape
   const item = apexName(ctx, body.assignNextValueToReference ?? `${node.name}_item`);
 
   return [
-    declare(listOf(elementType), target, null),
+    declare(listOf(elementType), target, construct(listOf(elementType), [])),
     forEach(elementType, item, apexName(ctx, body.collection), [
       ifThen(lowerConditions(body.conditionLogic ?? 'and', body.conditions, ctx), [
         collectInto(target, item),
