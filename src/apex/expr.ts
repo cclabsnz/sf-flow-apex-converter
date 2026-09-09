@@ -14,6 +14,7 @@ export type ApexExpr =
   | { node: 'logical'; type: ApexType; op: LogicalOperator; operands: ApexExpr[] }
   | { node: 'nullTest'; type: ApexType; operand: ApexExpr; negated: boolean }
   | { node: 'methodCall'; type: ApexType; target: ApexExpr; method: string; args: ApexExpr[] }
+  | { node: 'staticCall'; type: ApexType; name: string; args: ApexExpr[] }
   | { node: 'construct'; type: ApexType; args: ApexExpr[] };
 
 /**
@@ -182,4 +183,18 @@ export function methodCall(
 /** `new Account()` / `new List<String>()`. */
 export function construct(type: ApexType, args: ApexExpr[]): ApexExpr {
   return { node: 'construct', type, args };
+}
+
+const METHOD_NAME = /^[A-Za-z][A-Za-z0-9_]*$/;
+
+/**
+ * `name(args)` — a call with no target, for a static method on the class being
+ * generated. methodCall always renders `target.name(...)`, which a same-class
+ * static call has no target for.
+ */
+export function staticCall(name: string, args: ApexExpr[], type: ApexType): ApexExpr {
+  if (!METHOD_NAME.test(name)) {
+    throw new ApexTypeError(`'${name}' is not a valid Apex method name.`);
+  }
+  return { node: 'staticCall', type, name, args };
 }

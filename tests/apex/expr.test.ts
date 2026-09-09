@@ -1,6 +1,7 @@
 import { ApexTypeError } from '../../src/apex/errors.js';
 import {
-  comparison, construct, equality, fieldRead, literal, logical, methodCall, nullTest, stringLiteral, variable,
+  comparison, construct, equality, fieldRead, literal, logical, methodCall, nullTest, staticCall,
+  stringLiteral, variable,
 } from '../../src/apex/expr.js';
 import { emitExpr } from '../../src/apex/emit.js';
 import { declare } from '../../src/apex/stmt.js';
@@ -203,5 +204,20 @@ describe('construct', () => {
     // declare() validates assignability, so this must satisfy isAssignable.
     expect(() => declare(sobjectType('Account'), 'a', construct(sobjectType('Account'), [])))
       .not.toThrow();
+  });
+});
+
+describe('staticCall', () => {
+  it('emits a call with no target', () => {
+    expect(emitExpr(staticCall('formula_isReady', [], BOOLEAN))).toBe('formula_isReady()');
+  });
+
+  it('emits arguments', () => {
+    expect(emitExpr(staticCall('f', [literal(DECIMAL, '1'), literal(DECIMAL, '2')], BOOLEAN)))
+      .toBe('f(1, 2)');
+  });
+
+  it('refuses an invalid method name', () => {
+    expect(() => staticCall('2bad', [], BOOLEAN)).toThrow(ApexTypeError);
   });
 });

@@ -1,4 +1,4 @@
-import { ApexExpr, requireBoolean } from './expr.js';
+import { ApexExpr, requireBoolean, stringLiteral } from './expr.js';
 import { SoqlQuery } from './soql.js';
 import { ApexTypeError } from './errors.js';
 import { ApexType, isAssignable, isUntyped, renderType, sameName } from './types.js';
@@ -15,7 +15,8 @@ export type ApexStmt =
   | { stmt: 'forEach'; itemType: ApexType; item: string; collection: string; body: ApexStmt[] }
   | { stmt: 'dmlBulk'; operation: DmlOperation; collection: string }
   | { stmt: 'memberWrite'; target: string; member: string; value: ApexExpr }
-  | { stmt: 'invoke'; call: ApexExpr };
+  | { stmt: 'invoke'; call: ApexExpr }
+  | { stmt: 'throwStmt'; message: ApexExpr };
 
 export function declare(type: ApexType, name: string, init: ApexExpr | null): ApexStmt {
   if (init !== null && !isAssignable(type, init.type)) {
@@ -131,8 +132,19 @@ export function memberWrite(target: string, member: string, value: ApexExpr): Ap
  * hole through which `amount > 1000;` could be emitted.
  */
 export function invoke(call: ApexExpr): ApexStmt {
-  if (call.node !== 'methodCall') {
+  if (call.node !== 'methodCall' && call.node !== 'staticCall') {
     throw new ApexTypeError('Only a method call can be used as a statement.');
   }
   return { stmt: 'invoke', call };
+}
+
+/**
+ * `throw new UnsupportedOperationException('...');`
+ *
+ * The one exception type generated code throws, so the constructor takes only
+ * the message. The message goes through stringLiteral, so a quote in a Flow
+ * formula cannot end the literal early.
+ */
+export function throwStmt(message: string): ApexStmt {
+  return { stmt: 'throwStmt', message: stringLiteral(message) };
 }
