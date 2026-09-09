@@ -6,6 +6,8 @@ import * as path from 'path';
 import { SimplifiedFlowAnalyzer } from './utils/SimplifiedFlowAnalyzer.js';
 import { BulkifiedApexGenerator } from './utils/BulkifiedApexGenerator.js';
 import { Logger, LogLevel } from './utils/Logger.js';
+import { LoweringRefusal } from './lower/context.js';
+import { lowerFlow } from './lower/lowerFlow.js';
 
 const program = new Command();
 
@@ -108,6 +110,50 @@ program
     } catch (error) {
       console.error('❌ IR parsing failed:', error);
       process.exit(1);
+    }
+  });
+
+// Convert command
+program
+  .command('convert <flow-file>')
+  .description('Convert a Flow to an Apex class (not yet bulkified)')
+  .option('-o, --output <dir>', 'directory to write the class into', '.')
+  .action(async (flowFile: string, options: { output: string }) => {
+    try {
+      const { parseFlowFile } = await import('./ir/parseFlow.js');
+
+      const ir = await parseFlowFile(flowFile);
+      const { source, manifest } = lowerFlow(ir);
+      const classPath = path.join(options.output, `${manifest.className}.cls`);
+      const metaPath = `${classPath}-meta.xml`;
+      const manifestPath = path.join(options.output, `${manifest.className}-manifest.json`);
+
+      fs.writeFileSync(classPath, `${source}\n`);
+      fs.writeFileSync(metaPath,
+        '<?xml version="1.0" encoding="UTF-8"?>\n' +
+        '<ApexClass xmlns="http://soap.sforce.com/2006/04/metadata">\n' +
+        '    <apiVersion>58.0</apiVersion>\n' +
+        '    <status>Active</status>\n' +
+        '</ApexClass>\n');
+      fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+      console.log(`Wrote ${classPath}`);
+      if (manifest.guesses.length > 0) {
+        console.log(`  ${manifest.guesses.length} field type(s) guessed from naming`);
+      }
+      if (manifest.stubs.length > 0) {
+        console.log(`  ${manifest.stubs.length} construct(s) stubbed — the class compiles but throws if reached`);
+      }
+    } catch (error) {
+      if (error instanceof LoweringRefusal) {
+        // No .cls is written. Half a class whose control flow was guessed is
+        // worse than none.
+        console.error('Cannot convert this Flow:');
+        for (const p of error.problems) console.error(`  - ${p}`);
+        process.exitCode = 1;
+        return;
+      }
+      throw error;
     }
   });
 

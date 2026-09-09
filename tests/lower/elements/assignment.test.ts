@@ -52,6 +52,20 @@ describe('lowerAssignment', () => {
     expect(lowerAssignment(node, c).map((s) => emitStmt(s))).toEqual(['Msgs.add(Msg);']);
   });
 
+  it('merges an entire collection with addAll when the value is itself a collection', () => {
+    // Flow's own documented behaviour for the Add operator: when the value is
+    // a collection variable, Add appends every one of its elements rather than
+    // the collection itself. Emitting .add(list) onto a List<T> is a compile
+    // error in Apex (add(T), not add(List<T>)) — this is exactly the shape a
+    // real production Flow uses when it collects results from several
+    // sub-validations into one list of messages.
+    const c = ctx([decl('Msgs', 'Apex', true), decl('MoreMsgs', 'Apex', true)]);
+    const node = assignmentNode([
+      { target: 'Msgs', operator: 'Add', value: { kind: 'reference', raw: 'MoreMsgs' } },
+    ]);
+    expect(lowerAssignment(node, c).map((s) => emitStmt(s))).toEqual(['Msgs.addAll(MoreMsgs);']);
+  });
+
   it('clears a collection for RemoveAll', () => {
     const c = ctx([decl('Msgs', 'Apex', true)]);
     const node = assignmentNode([{ target: 'Msgs', operator: 'RemoveAll', value: { kind: 'none' } }]);

@@ -20,7 +20,8 @@ const STANDARD_FIELDS: Record<string, ApexType> = {
 export function flowTypeToApex(
   dataType: string,
   objectType: string | undefined,
-  isCollection: boolean
+  isCollection: boolean,
+  apexClass?: string
 ): ApexType {
   const scalar = ((): ApexType => {
     switch (dataType.toLowerCase()) {
@@ -51,10 +52,18 @@ export function flowTypeToApex(
         return DATETIME;
       case 'sobject':
         return sobjectType(objectType);
+      case 'apex':
+        // An Apex-defined type is a class the converter cannot see, so it is
+        // modelled as an SObject-free opaque name — its own <apexClass>, read
+        // from Flow metadata, not guessed. A variable typed this way (an
+        // invocable's request/response wrapper, e.g. ValidationMessage) has no
+        // <objectType> at all, so falling back to that first would leave it
+        // untyped as String, and every field write on it a compile error
+        // against the real class.
+        return sobjectType(apexClass ?? objectType);
       default:
-        // Apex-defined types and anything unrecognised. An Apex-defined type is
-        // a class the converter cannot see, so it is modelled as an SObject-free
-        // opaque name when one is given, and as String otherwise.
+        // Anything unrecognised. No name to go on, so String rather than a
+        // guessed class reference.
         return objectType ? sobjectType(objectType) : STRING;
     }
   })();
@@ -143,7 +152,7 @@ export function declarationTypeSource(ir: FlowIR): TypeSource {
         const declared = declarations.get(reference.toLowerCase());
         if (declared) {
           return {
-            type: flowTypeToApex(declared.dataType, declared.objectType, declared.isCollection),
+            type: flowTypeToApex(declared.dataType, declared.objectType, declared.isCollection, declared.apexClass),
             provenance: 'declared',
             note: `${reference} declared as ${declared.dataType}`,
           };

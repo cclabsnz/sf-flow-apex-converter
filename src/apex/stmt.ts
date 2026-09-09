@@ -9,7 +9,7 @@ export type ApexStmt =
   | { stmt: 'declare'; type: ApexType; name: string; init: ApexExpr | null }
   | { stmt: 'assign'; name: string; value: ApexExpr }
   | { stmt: 'fieldWrite'; record: string; field: string; value: ApexExpr }
-  | { stmt: 'collectInto'; collection: string; record: string }
+  | { stmt: 'collectInto'; collection: string; record: string; addAll: boolean }
   | { stmt: 'queryInto'; type: ApexType; name: string; query: SoqlQuery }
   | { stmt: 'ifThen'; condition: ApexExpr; body: ApexStmt[]; elseBody: ApexStmt[] }
   | { stmt: 'forEach'; itemType: ApexType; item: string; collection: string; body: ApexStmt[] }
@@ -46,15 +46,22 @@ export function fieldWrite(record: string, field: string, value: ApexExpr): Apex
 }
 
 /**
- * Add a record to a collection for later DML.
+ * Add a record — or, with `addAll`, every element of another collection — to
+ * a collection for later DML.
+ *
+ * `addAll` exists because Flow's own Add operator is overloaded this way: when
+ * the assigned value is itself a collection, Add appends all of its elements
+ * rather than the collection as one item. Apex's `List.add(T)` only accepts a
+ * single element, so `Msgs.add(MoreMsgs)` where both are `List<T>` is a compile
+ * error — `.addAll(List<T>)` is the call that actually exists for this case.
  *
  * There is deliberately no statement for DML on a single record. The only way to
  * write to the database is dmlBulk over a collection, so a per-iteration
  * insert/update — the anti-pattern this whole tool exists to remove — cannot be
  * represented in the tree at all.
  */
-export function collectInto(collection: string, record: string): ApexStmt {
-  return { stmt: 'collectInto', collection, record };
+export function collectInto(collection: string, record: string, addAll = false): ApexStmt {
+  return { stmt: 'collectInto', collection, record, addAll };
 }
 
 /**

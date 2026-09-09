@@ -87,6 +87,35 @@ export function reachable(cfg: Cfg): Set<string> {
 }
 
 /**
+ * A sentinel that cannot collide with a real Flow API name (those are
+ * restricted to alphanumerics and underscores), used below to give every
+ * node a genuine path to termination.
+ */
+const EXIT = ' exit ';
+
+/**
+ * A node's successors for post-dominance purposes, with a path to the virtual
+ * EXIT sentinel added wherever the real graph has none.
+ *
+ * A Flow element with no connector is a real dead end, and already gets one.
+ * A loop with no "after last" connector is the case the real edges miss: its
+ * only modelled successor is its own body, which cycles back into it forever,
+ * so the live graph can end up with no node at all that has zero successors —
+ * every element eventually funnels into that loop. Without a virtual exit for
+ * that implicit termination (the Flow simply ends once the collection is
+ * exhausted), the fixpoint below never shrinks below "every node reachable",
+ * and every node appears to post-dominate every other one.
+ */
+function exitingSuccessors(cfg: Cfg, live: Set<string>, name: string): string[] {
+  const real = cfg.successors(name).map((e) => e.to).filter((t) => live.has(t));
+  const node = cfg.node(name);
+  if (node?.body?.kind === 'loop' && node.body.afterTarget === undefined) {
+    return [...real, EXIT];
+  }
+  return real.length === 0 ? [EXIT] : real;
+}
+
+/**
  * Post-dominator sets by iterative dataflow on the reversed graph.
  *
  * Deliberately the simple O(n^2) formulation rather than Lengauer-Tarjan. These
@@ -96,30 +125,23 @@ export function reachable(cfg: Cfg): Set<string> {
 export function postDominators(cfg: Cfg): Map<string, Set<string>> {
   const live = reachable(cfg);
   const names = cfg.order.filter((n) => live.has(n));
-  const all = new Set(names);
-  const exits = names.filter((n) => cfg.successors(n).length === 0);
+  const all = new Set([...names, EXIT]);
 
   const pdom = new Map<string, Set<string>>();
-  for (const n of names) pdom.set(n, exits.includes(n) ? new Set([n]) : new Set(all));
-  for (const e of exits) pdom.set(e, new Set([e]));
+  pdom.set(EXIT, new Set([EXIT]));
+  for (const n of names) pdom.set(n, new Set(all));
 
   let changed = true;
   while (changed) {
     changed = false;
     for (const n of names) {
-      if (exits.includes(n)) continue;
-      const succs = cfg.successors(n).map((e) => e.to).filter((t) => all.has(t));
-      let next: Set<string>;
-      if (succs.length === 0) {
-        next = new Set([n]);
-      } else {
-        next = new Set(pdom.get(succs[0]) ?? []);
-        for (const s of succs.slice(1)) {
-          const other = pdom.get(s) ?? new Set<string>();
-          next = new Set([...next].filter((x) => other.has(x)));
-        }
-        next.add(n);
+      const succs = exitingSuccessors(cfg, live, n);
+      let next: Set<string> = new Set(pdom.get(succs[0]) ?? []);
+      for (const s of succs.slice(1)) {
+        const other = pdom.get(s) ?? new Set<string>();
+        next = new Set([...next].filter((x) => other.has(x)));
       }
+      next.add(n);
       const before = pdom.get(n) as Set<string>;
       if (before.size !== next.size || [...next].some((x) => !before.has(x))) {
         pdom.set(n, next);
@@ -136,7 +158,10 @@ export function postDominators(cfg: Cfg): Map<string, Set<string>> {
  */
 export function immediatePostDominator(cfg: Cfg, node: string): string | undefined {
   const pdom = postDominators(cfg);
-  const candidates = [...(pdom.get(node) ?? [])].filter((n) => n !== node);
+  // EXIT is the virtual sentinel postDominators adds for implicit termination
+  // (see exitingSuccessors); it names no real element, so it can never be the
+  // join two branches reconverge at.
+  const candidates = [...(pdom.get(node) ?? [])].filter((n) => n !== node && n !== EXIT);
   if (candidates.length === 0) return undefined;
   // The immediate one is post-dominated by every other candidate.
   for (const c of candidates) {
