@@ -15,7 +15,14 @@ export type ApexExpr =
   | { node: 'nullTest'; type: ApexType; operand: ApexExpr; negated: boolean }
   | { node: 'methodCall'; type: ApexType; target: ApexExpr; method: string; args: ApexExpr[] }
   | { node: 'staticCall'; type: ApexType; name: string; args: ApexExpr[] }
-  | { node: 'construct'; type: ApexType; args: ApexExpr[] };
+  | { node: 'construct'; type: ApexType; args: ApexExpr[] }
+  | {
+      node: 'ternary';
+      type: ApexType;
+      condition: ApexExpr;
+      whenTrue: ApexExpr;
+      whenFalse: ApexExpr;
+    };
 
 /**
  * A single literal atom, already rendered as Apex source (quotes included for
@@ -183,6 +190,37 @@ export function methodCall(
 /** `new Account()` / `new List<String>()`. */
 export function construct(type: ApexType, args: ApexExpr[]): ApexExpr {
   return { node: 'construct', type, args };
+}
+
+/**
+ * `condition ? whenTrue : whenFalse`, with an explicit result type.
+ *
+ * The narrowest node that can express "the first record, or null when there was
+ * none" — the shape Flow's `getFirstRecordOnly` actually has. `[SELECT ...][0]`
+ * throws on an empty result, and `LIMIT 1` alone does not make the variable null,
+ * so a conditional is genuinely required rather than a convenience.
+ *
+ * The result type is a parameter, not inferred, because inference would have to
+ * pick a winner when the two branches differ — and `null` on one side carries no
+ * type at all. Both branches are checked against the declared type instead, so a
+ * caller cannot produce `Decimal x = flag ? 'a' : 1;`.
+ */
+export function ternary(
+  condition: ApexExpr,
+  whenTrue: ApexExpr,
+  whenFalse: ApexExpr,
+  type: ApexType
+): ApexExpr {
+  requireBoolean(condition, "A conditional expression's condition");
+  for (const [branch, which] of [[whenTrue, 'true'], [whenFalse, 'false']] as const) {
+    if (!isAssignable(type, branch.type)) {
+      throw new ApexTypeError(
+        `The '${which}' branch of a conditional expression is ${renderType(branch.type)}, ` +
+          `which Apex cannot assign to ${renderType(type)}.`
+      );
+    }
+  }
+  return { node: 'ternary', type, condition, whenTrue, whenFalse };
 }
 
 const METHOD_NAME = /^[A-Za-z][A-Za-z0-9_]*$/;
