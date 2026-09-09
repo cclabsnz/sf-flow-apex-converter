@@ -58,6 +58,20 @@ export function lowerFlow(ir: FlowIR): LoweredFlow {
   const structure = checkStructure(cfg);
   if (!structure.ok) throw new LoweringRefusal(structure.problems);
 
+  // Apex class names cap at 40 characters; Flow names do not. Verified against the
+  // org: a 41-character class name fails with "Identifier name is too long". This
+  // converter DOES generate the main class, so truncation is technically available —
+  // but separate CLI invocations share no Scope, so a truncated name risks a silent
+  // collision across unrelated Flows, and it changes the artifact's identity without
+  // the user asking. Refuse instead, consistent with this project's preference
+  // throughout: half a class the developer didn't ask for is worse than none.
+  if (ir.flowName.length > 40) {
+    throw new LoweringRefusal([
+      `Flow name '${ir.flowName}' is ${ir.flowName.length} characters; an Apex class name ` +
+        'cannot exceed 40. Rename the Flow, or supply an explicit class name.',
+    ]);
+  }
+
   const scope = new Scope();
   const className = scope.allocate(ir.flowName);
   const ctx: LowerContext = {

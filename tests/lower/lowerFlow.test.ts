@@ -20,6 +20,23 @@ describe('lowerFlow', () => {
     expect(lowerFlow(flow({ flowName: 'Update' })).apexClass.name).toBe('vUpdate');
   });
 
+  it('refuses a Flow name longer than Apex\'s 40-character class-name limit', () => {
+    // Verified against the org: a 41-character class name fails with
+    // "Identifier name is too long"; 40 deploys. Unlike a subflow reference,
+    // this converter DOES generate the main class, so truncation is
+    // technically available — but separate CLI invocations share no Scope,
+    // so a truncated name risks a silent collision across unrelated Flows,
+    // and it changes the artifact's identity without the user asking.
+    // Refuse instead, consistent with this project's preference throughout.
+    const longName = 'A'.repeat(41);
+    expect(() => lowerFlow(flow({ flowName: longName }))).toThrow(LoweringRefusal);
+  });
+
+  it('accepts a Flow name exactly at the 40-character limit', () => {
+    const fortyChars = 'A'.repeat(40);
+    expect(lowerFlow(flow({ flowName: fortyChars })).apexClass.name).toBe(fortyChars);
+  });
+
   it('defaults to with sharing and honours runInMode', () => {
     expect(lowerFlow(flow()).apexClass.sharing).toBe('with sharing');
     expect(lowerFlow(flow({ runInMode: 'SystemModeWithoutSharing' })).apexClass.sharing)
