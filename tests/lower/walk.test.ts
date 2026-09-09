@@ -143,6 +143,55 @@ describe('lowerFrom', () => {
     expect(out.indexOf("z = 'x';")).toBeGreaterThan(out.indexOf('} catch'));
   });
 
+  it('emits the tail after a rejoining fault path exactly once', () => {
+    // A --fault--> F --> C, alongside A --> B --> C. Lowering the fault path
+    // with the ENCLOSING stopAt emitted C inside the catch AND again after it,
+    // so on the fault path C ran twice and F's own assignments were
+    // overwritten. The correct shape is try { A; B; } catch (Exception e) { F; } C;
+    const faulty: FlowNode = {
+      ...assignNode('A', 'B', 'x'),
+      connectors: [{ target: 'B', isFault: false }, { target: 'F', isFault: true }],
+    };
+    const flow = ir([
+      faulty,
+      assignNode('B', 'C', 'y'),
+      assignNode('F', 'C', 'z'),
+      assignNode('C', undefined, 'tail'),
+    ], 'A');
+    flow.declarations = [decl('x'), decl('y'), decl('z'), decl('tail')];
+    const out = lowerFrom(buildCfg(flow), 'A', undefined, makeCtx(flow))
+      .map((s) => emitStmt(s)).join('\n');
+    expect(out.match(/tail = 'x';/g)).toHaveLength(1);
+    // The tail is the join of the success and fault paths, so it sits AFTER the
+    // whole try/catch, not inside either arm.
+    expect(out.indexOf("tail = 'x';")).toBeGreaterThan(out.lastIndexOf('}'));
+  });
+
+  it('puts the success path inside the try and the fault path inside the catch', () => {
+    const faulty: FlowNode = {
+      ...assignNode('A', 'B', 'x'),
+      connectors: [{ target: 'B', isFault: false }, { target: 'F', isFault: true }],
+    };
+    const flow = ir([
+      faulty,
+      assignNode('B', 'C', 'y'),
+      assignNode('F', 'C', 'z'),
+      assignNode('C', undefined, 'tail'),
+    ], 'A');
+    flow.declarations = [decl('x'), decl('y'), decl('z'), decl('tail')];
+    const out = lowerFrom(buildCfg(flow), 'A', undefined, makeCtx(flow))
+      .map((s) => emitStmt(s)).join('\n');
+    const catchAt = out.indexOf('} catch (Exception e) {');
+    expect(catchAt).toBeGreaterThan(-1);
+    // A and its success continuation B are both in the try.
+    expect(out.indexOf("x = 'x';")).toBeLessThan(catchAt);
+    expect(out.indexOf("y = 'x';")).toBeLessThan(catchAt);
+    // F is in the catch, and appears only there.
+    expect(out.indexOf("z = 'x';")).toBeGreaterThan(catchAt);
+    expect(out.match(/z = 'x';/g)).toHaveLength(1);
+    expect(out.match(/y = 'x';/g)).toHaveLength(1);
+  });
+
   it('refuses a decision element with a fault connector rather than dropping it', () => {
     const base = decision('D', 'T', 'F');
     const withFault: FlowNode = {
