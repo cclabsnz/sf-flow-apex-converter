@@ -2,7 +2,7 @@ import { ApexTypeError } from '../../src/apex/errors.js';
 import { comparison, literal, methodCall, variable } from '../../src/apex/expr.js';
 import { soql } from '../../src/apex/soql.js';
 import {
-  assign, declare, ifThen, invoke, memberWrite, queryInto, throwStmt,
+  assign, declare, ifThen, invoke, memberWrite, queryInto, throwStmt, tryCatch,
 } from '../../src/apex/stmt.js';
 import { emitStmt } from '../../src/apex/emit.js';
 import {
@@ -68,6 +68,32 @@ describe('ifThen', () => {
 
   it('accepts a Boolean condition', () => {
     expect(() => ifThen(variable(BOOLEAN, 'isReady'), [])).not.toThrow();
+  });
+});
+
+describe('ifThen with an else branch', () => {
+  it('emits both branches', () => {
+    expect(emitStmt(ifThen(
+      variable(BOOLEAN, 'b'),
+      [assign('a', literal(DECIMAL, '1'))],
+      [assign('a', literal(DECIMAL, '2'))]
+    ))).toBe('if (b) {\n    a = 1;\n} else {\n    a = 2;\n}');
+  });
+
+  it('omits the else when the branch is empty, keeping 2b behaviour', () => {
+    expect(emitStmt(ifThen(variable(BOOLEAN, 'b'), [assign('a', literal(DECIMAL, '1'))])))
+      .toBe('if (b) {\n    a = 1;\n}');
+  });
+});
+
+describe('tryCatch', () => {
+  it('emits a try/catch with both bodies indented', () => {
+    const out = emitStmt(tryCatch(
+      [assign('a', literal(DECIMAL, '1'))],
+      'e',
+      [assign('b', literal(DECIMAL, '2'))]
+    ));
+    expect(out).toBe('try {\n    a = 1;\n} catch (Exception e) {\n    b = 2;\n}');
   });
 });
 
