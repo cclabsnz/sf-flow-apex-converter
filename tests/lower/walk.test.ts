@@ -386,3 +386,87 @@ describe('lowerFrom and element-owned names that are also Flow declarations', ()
     expect(out).toContain('for (Account Item : items)');
   });
 });
+
+describe('lowerFrom and a fault connector inside a loop body', () => {
+  // A fault edge out of a loop body bypasses the back-edge, so the loop element
+  // does NOT post-dominate the faulting element. The fault join is then either
+  // undefined (the fault ends the Flow) or a node past the loop, and handing it
+  // to the success arm as its stop REPLACED the loop's own stop. The success
+  // successor is the back-edge, so lowerFrom re-entered the loop element with a
+  // fresh guard set and recursed until the stack blew:
+  // `RangeError: Maximum call stack size exceeded`.
+
+  const items: FlowDeclaration = {
+    name: 'items', kind: 'variable', dataType: 'SObject', objectType: 'Account',
+    isCollection: true, isInput: false, isOutput: false, sourceJson: '{}',
+  };
+
+  function faulting(name: string, success: string | undefined, fault: string, target: string): FlowNode {
+    return {
+      ...assignNode(name, success, target),
+      connectors: [
+        ...(success ? [{ target: success, isFault: false }] : []),
+        { target: fault, isFault: true },
+      ],
+    };
+  }
+
+  it('does not recurse when the fault path inside a loop ends the Flow', () => {
+    const flow = ir([
+      loop('L', 'A', 'After'),
+      faulting('A', 'L', 'F', 'x'),
+      assignNode('F', undefined, 'z'),
+      assignNode('After', undefined, 'y'),
+    ], 'L');
+    flow.declarations = [items, decl('x'), decl('y'), decl('z')];
+    expect(() => lowerFrom(buildCfg(flow), 'L', undefined, makeCtx(flow)))
+      .toThrow(LoweringRefusal);
+    expect(() => lowerFrom(buildCfg(flow), 'L', undefined, makeCtx(flow)))
+      .toThrow(/fault/i);
+  });
+
+  it('does not recurse when the fault path inside a loop continues after the loop', () => {
+    const flow = ir([
+      loop('L', 'A', 'After'),
+      faulting('A', 'L', 'F', 'x'),
+      assignNode('F', 'After', 'z'),
+      assignNode('After', undefined, 'y'),
+    ], 'L');
+    flow.declarations = [items, decl('x'), decl('y'), decl('z')];
+    expect(() => lowerFrom(buildCfg(flow), 'L', undefined, makeCtx(flow)))
+      .toThrow(LoweringRefusal);
+    expect(() => lowerFrom(buildCfg(flow), 'L', undefined, makeCtx(flow)))
+      .toThrow(/fault/i);
+  });
+
+  it('lowers a fault path that rejoins inside the loop body to try/catch', () => {
+    // The join (B) is strictly inside the loop body, so the enclosing stop is
+    // never replaced and the shape is the ordinary one.
+    const flow = ir([
+      loop('L', 'A', 'After'),
+      faulting('A', 'B', 'F', 'x'),
+      assignNode('F', 'B', 'z'),
+      assignNode('B', 'L', 'rejoined'),
+      assignNode('After', undefined, 'y'),
+    ], 'L');
+    flow.declarations = [items, decl('x'), decl('y'), decl('z'), decl('rejoined')];
+    const out = lowerFrom(buildCfg(flow), 'L', undefined, makeCtx(flow))
+      .map((s) => emitStmt(s)).join('\n');
+
+    expect(out).toContain('for (Account ');
+    expect(out).toContain('try {');
+    const catchAt = out.indexOf('} catch (Exception e) {');
+    expect(catchAt).toBeGreaterThan(-1);
+    // A in the try, F in the catch, each exactly once.
+    expect(out.indexOf("x = 'x';")).toBeLessThan(catchAt);
+    expect(out.indexOf("z = 'x';")).toBeGreaterThan(catchAt);
+    expect(out.match(/x = 'x';/g)).toHaveLength(1);
+    expect(out.match(/z = 'x';/g)).toHaveLength(1);
+    // The rejoin runs once, after the try/catch and still inside the loop.
+    expect(out.match(/rejoined = 'x';/g)).toHaveLength(1);
+    expect(out.indexOf("rejoined = 'x';")).toBeGreaterThan(catchAt);
+    expect(out.indexOf("rejoined = 'x';")).toBeLessThan(out.indexOf("y = 'x';"));
+    // The after-target belongs outside the loop, exactly once.
+    expect(out.match(/y = 'x';/g)).toHaveLength(1);
+  });
+});
