@@ -165,4 +165,90 @@ describe('lowerFlow', () => {
     });
     expect(() => lowerFlow(ir)).toThrow(LoweringRefusal);
   });
+
+  it('initialises a declared collection so Add/AddItem does not NPE', () => {
+    // "Accumulate validation messages into a collection" is one of the most
+    // common Flow shapes there is. A collection local declared `null` blows up
+    // on its first .add() with no Flow-side signal that anything is wrong.
+    const ir = flow({
+      declarations: [
+        { name: 'Msg', kind: 'variable', dataType: 'String', isCollection: false,
+          isInput: false, isOutput: false, sourceJson: '{}' },
+        { name: 'ValidationMessages', kind: 'variable', dataType: 'String', isCollection: true,
+          isInput: false, isOutput: false, sourceJson: '{}' },
+      ],
+      nodes: [{
+        name: 'Add_Message', kind: 'assignments', connectors: [], sourceJson: '{}', raw: {},
+        body: { kind: 'assignment', items: [
+          { target: 'ValidationMessages', operator: 'AddItem', value: { kind: 'reference', raw: 'Msg' } },
+        ] },
+      }],
+      start: { triggerKind: 'autolaunched', connector: { target: 'Add_Message', isFault: false }, sourceJson: '{}' },
+    });
+    const result = lowerFlow(ir);
+    expect(result.source).toContain('List<String> ValidationMessages = new List<String>();');
+    expect(result.source).toContain('ValidationMessages.add(Msg);');
+  });
+
+  it('leaves a scalar declaration null-initialised', () => {
+    // Pre-constructing an SObject local would mask "no record found" — only
+    // collections get an initialiser.
+    const ir = flow({
+      declarations: [{
+        name: 'Acct', kind: 'variable', dataType: 'SObject', objectType: 'Account',
+        isCollection: false, isInput: false, isOutput: false, sourceJson: '{}',
+      }],
+    });
+    expect(lowerFlow(ir).source).toContain('Account Acct;');
+  });
+
+  it('does not re-declare a Get Records outputReference that is also a Flow declaration', () => {
+    // "Manually store record data into a named variable" is the standard Get
+    // Records configuration in Flow Builder. Pre-declaring the same name that
+    // queryInto is about to declare produces "Variable already defined: Accts",
+    // and the class never deploys.
+    const ir = flow({
+      declarations: [{
+        name: 'Accts', kind: 'variable', dataType: 'SObject', objectType: 'Account',
+        isCollection: true, isInput: false, isOutput: false, sourceJson: '{}',
+      }],
+      nodes: [{
+        name: 'Get_Accounts', kind: 'recordlookups', connectors: [], sourceJson: '{}', raw: {},
+        object: 'Account',
+        body: {
+          kind: 'record', object: 'Account', filters: [], inputAssignments: [],
+          queriedFields: ['Id', 'Name'], getFirstRecordOnly: false,
+          storeOutputAutomatically: false, outputReference: 'Accts', outputAssignments: [],
+          assignNullValuesIfNoRecordsFound: false,
+        },
+      }],
+      start: { triggerKind: 'autolaunched', connector: { target: 'Get_Accounts', isFault: false }, sourceJson: '{}' },
+    });
+    const result = lowerFlow(ir);
+    expect(result.source).not.toMatch(/List<Account> Accts;/);
+    expect(result.source.match(/List<Account> Accts/g)).toHaveLength(1);
+    expect(result.source).toContain('List<Account> Accts = [');
+  });
+
+  it('refuses a Get Records outputReference that collides with an input parameter', () => {
+    // The element would redeclare a parameter, which Apex also rejects.
+    const ir = flow({
+      declarations: [{
+        name: 'Accts', kind: 'variable', dataType: 'SObject', objectType: 'Account',
+        isCollection: true, isInput: true, isOutput: false, sourceJson: '{}',
+      }],
+      nodes: [{
+        name: 'Get_Accounts', kind: 'recordlookups', connectors: [], sourceJson: '{}', raw: {},
+        object: 'Account',
+        body: {
+          kind: 'record', object: 'Account', filters: [], inputAssignments: [],
+          queriedFields: ['Id'], getFirstRecordOnly: false,
+          storeOutputAutomatically: false, outputReference: 'Accts', outputAssignments: [],
+          assignNullValuesIfNoRecordsFound: false,
+        },
+      }],
+      start: { triggerKind: 'autolaunched', connector: { target: 'Get_Accounts', isFault: false }, sourceJson: '{}' },
+    });
+    expect(() => lowerFlow(ir)).toThrow(LoweringRefusal);
+  });
 });

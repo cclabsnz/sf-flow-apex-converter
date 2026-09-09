@@ -1,5 +1,5 @@
 import { methodCall, literal, variable } from '../../apex/expr.js';
-import { ApexStmt, assign, collectInto, fieldWrite, invoke, memberWrite } from '../../apex/stmt.js';
+import { ApexStmt, assign, collectInto, invoke, memberWrite } from '../../apex/stmt.js';
 import { ApexType, BOOLEAN, INTEGER } from '../../apex/types.js';
 import { FlowAssignmentItem, FlowNode } from '../../ir/types.js';
 import { LowerContext, apexName } from '../context.js';
@@ -44,27 +44,27 @@ function lowerItem(item: FlowAssignmentItem, ctx: LowerContext): ApexStmt {
       const field = item.target.slice(dot + 1);
       const record = apexName(ctx, head);
 
-      // The head's own declared type (never a heuristic guess — see
-      // declarationTypeSource) decides which write Apex accepts: `.put()` on
-      // an SObject, or a plain member write on an Apex-defined type. Writing
-      // fieldWrite on a non-SObject would compile to a call the value has no
-      // .put() method for; memberWrite on an SObject would compile too, but
-      // it is the record.ts convention this project uses for SObject writes
-      // elsewhere, and only fieldWrite's cast-free `.put()` matches that.
-      if (ctx.types.resolve(head).type.kind !== 'SObject') {
-        return memberWrite(record, field, value);
+      // memberWrite regardless of whether head is an SObject or an
+      // Apex-defined type: `Acct.NC_Amount__c = x;` is checked by the real
+      // compiler against the real deployed schema, so a wrong field name or a
+      // wrong guessed type fails at deploy, precisely located there. The
+      // `.put()` form takes (String, Object) — both sides opaque — so a wrong
+      // guess would deploy cleanly and only throw at runtime, possibly in
+      // production. That is the worse failure mode for a converter whose
+      // header exists specifically to flag guessed types.
+      //
+      // The field's own type is still resolved, purely to report a
+      // name-guessed field here exactly as lowerReference reports it for a
+      // read of the same field. Without this, a Flow that only ever writes a
+      // guessed field — never reads it — would guess its type with nothing in
+      // the header or manifest to show for it.
+      if (ctx.types.resolve(head).type.kind === 'SObject') {
+        const resolved = ctx.types.resolve(item.target);
+        if (resolved.provenance === 'heuristic') {
+          ctx.notes.push({ kind: 'guess', detail: resolved.note });
+        }
       }
-
-      // The field's own type is resolved too, purely to report a name-guessed
-      // field here exactly as lowerReference reports it for a read of the
-      // same field. Without this, a Flow that only ever writes a guessed
-      // field — never reads it — would guess its type with nothing in the
-      // header or manifest to show for it.
-      const resolved = ctx.types.resolve(item.target);
-      if (resolved.provenance === 'heuristic') {
-        ctx.notes.push({ kind: 'guess', detail: resolved.note });
-      }
-      return fieldWrite(record, field, value);
+      return memberWrite(record, field, value);
     }
 
     case 'Add':
