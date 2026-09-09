@@ -11,12 +11,13 @@ export type ApexStmt =
   | { stmt: 'fieldWrite'; record: string; field: string; value: ApexExpr }
   | { stmt: 'collectInto'; collection: string; record: string }
   | { stmt: 'queryInto'; type: ApexType; name: string; query: SoqlQuery }
-  | { stmt: 'ifThen'; condition: ApexExpr; body: ApexStmt[] }
+  | { stmt: 'ifThen'; condition: ApexExpr; body: ApexStmt[]; elseBody: ApexStmt[] }
   | { stmt: 'forEach'; itemType: ApexType; item: string; collection: string; body: ApexStmt[] }
   | { stmt: 'dmlBulk'; operation: DmlOperation; collection: string }
   | { stmt: 'memberWrite'; target: string; member: string; value: ApexExpr }
   | { stmt: 'invoke'; call: ApexExpr }
-  | { stmt: 'throwStmt'; message: ApexExpr };
+  | { stmt: 'throwStmt'; message: ApexExpr }
+  | { stmt: 'tryCatch'; body: ApexStmt[]; exceptionName: string; handler: ApexStmt[] };
 
 export function declare(type: ApexType, name: string, init: ApexExpr | null): ApexStmt {
   if (init !== null && !isAssignable(type, init.type)) {
@@ -78,11 +79,15 @@ export function queryInto(type: ApexType, name: string, query: SoqlQuery): ApexS
   return { stmt: 'queryInto', type, name, query };
 }
 
-export function ifThen(condition: ApexExpr, body: ApexStmt[]): ApexStmt {
+export function ifThen(
+  condition: ApexExpr,
+  body: ApexStmt[],
+  elseBody: ApexStmt[] = []
+): ApexStmt {
   // `if (5)` is not C. The compiler is explicit: "Condition expression must be
   // of type Boolean: Integer".
   requireBoolean(condition, 'An if condition');
-  return { stmt: 'ifThen', condition, body };
+  return { stmt: 'ifThen', condition, body, elseBody };
 }
 
 export function forEach(
@@ -147,4 +152,14 @@ export function invoke(call: ApexExpr): ApexStmt {
  */
 export function throwStmt(message: string): ApexStmt {
   return { stmt: 'throwStmt', message: stringLiteral(message) };
+}
+
+/**
+ * `try { ... } catch (Exception e) { ... }` — the shape a Flow fault connector
+ * lowers to. The exception name goes through the identifier guard so a fault
+ * path cannot inject one.
+ */
+export function tryCatch(body: ApexStmt[], exceptionName: string, handler: ApexStmt[]): ApexStmt {
+  requireIdentifier(exceptionName, 'An exception variable');
+  return { stmt: 'tryCatch', body, exceptionName, handler };
 }

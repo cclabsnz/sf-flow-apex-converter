@@ -104,7 +104,15 @@ export function emitStmt(s: ApexStmt, depth = 0): string {
       return `${pad}${renderType(s.type)} ${s.name} = [\n${q}\n${pad}];`;
     }
     case 'ifThen':
-      return `${pad}if (${emitExpr(s.condition)}) ${braces(s.body, depth, pad)}`;
+      return (
+        `${pad}if (${emitExpr(s.condition)}) ${braces(s.body, depth, pad)}` +
+        (s.elseBody.length > 0 ? ` else ${braces(s.elseBody, depth, pad)}` : '')
+      );
+    case 'tryCatch':
+      return (
+        `${pad}try ${braces(s.body, depth, pad)} ` +
+        `catch (Exception ${s.exceptionName}) ${braces(s.handler, depth, pad)}`
+      );
     case 'forEach':
       return (
         `${pad}for (${renderType(s.itemType)} ${s.item} : ${s.collection}) ` +
